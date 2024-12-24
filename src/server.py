@@ -14,8 +14,10 @@ from src.datatypes.lists import Lists
 from src.datatypes.sets import Sets
 from src.datatypes.hashes import Hashes
 from src.datatypes.sorted_sets import SortedSets
+
 from src.datatypes.streams import Streams
 from src.datatypes.json_type import JSONType
+from src.datatypes.bitmaps import Bitmaps
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -37,6 +39,7 @@ class Server:
         self.sorted_sets = SortedSets()
         self.streams = Streams()
         self.json_type = JSONType()
+        self.bitmaps = Bitmaps()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -290,7 +293,24 @@ class Server:
             elif cmd == "JSON.ARRAPPEND":
                 key, path, *values = args
                 return str(self.json_type.json_arrappend(self.data_store.store, key, path, *values))
+            
+            #Bitmaps
+            elif cmd == "SETBIT":
+                key, offset, value = args
+                return str(self.bitmaps.setbit(self.data_store.store, key, int(offset), value))
 
+            elif cmd == "GETBIT":
+                key, offset = args
+                return str(self.bitmaps.getbit(self.data_store.store, key, int(offset)))
+
+            elif cmd == "BITCOUNT":
+                key, *rest = args
+                start, end = (int(rest[0]), int(rest[1])) if len(rest) == 2 else (None, None)
+                return str(self.bitmaps.bitcount(self.data_store.store, key, start, end))
+
+            elif cmd == "BITOP":
+                operation, destkey, *sourcekeys = args
+                return str(self.bitmaps.bitop(self.data_store.store, operation, destkey, *sourcekeys))
 
 
             else:
