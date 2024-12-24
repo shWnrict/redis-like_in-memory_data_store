@@ -9,6 +9,7 @@ from src.core.expiry_manager import ExpiryManager
 from src.protocol import RESPProtocol
 
 from src.datatypes.strings import Strings
+from src.datatypes.lists import Lists
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -22,6 +23,7 @@ class Server:
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
         self.strings = Strings()
+        self.lists = Lists()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -115,6 +117,35 @@ class Server:
                 key, offset, value = args
                 offset = int(offset)
                 return str(self.strings.setrange(self.data_store.store, key, offset, value))
+
+            #lists
+            elif cmd == "LPUSH":
+                key, *values = args
+                return str(self.lists.lpush(self.data_store.store, key, *values))
+
+            elif cmd == "RPUSH":
+                key, *values = args
+                return str(self.lists.rpush(self.data_store.store, key, *values))
+
+            elif cmd == "LPOP":
+                key = args[0]
+                return self.lists.lpop(self.data_store.store, key)
+
+            elif cmd == "RPOP":
+                key = args[0]
+                return self.lists.rpop(self.data_store.store, key)
+
+            elif cmd == "LRANGE":
+                key, start, end = args
+                return str(self.lists.lrange(self.data_store.store, key, start, end))
+
+            elif cmd == "LINDEX":
+                key, index = args
+                return self.lists.lindex(self.data_store.store, key, index)
+
+            elif cmd == "LSET":
+                key, index, value = args
+                return self.lists.lset(self.data_store.store, key, index, value)
 
 
             else:
