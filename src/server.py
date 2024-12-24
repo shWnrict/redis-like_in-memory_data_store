@@ -12,6 +12,7 @@ from src.protocol import RESPProtocol
 from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
 from src.datatypes.sets import Sets
+from src.datatypes.hashes import Hashes
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -29,6 +30,7 @@ class Server:
         self.strings = Strings()
         self.lists = Lists()
         self.sets = Sets()
+        self.hashes = Hashes()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -178,6 +180,32 @@ class Server:
             elif cmd == "SDIFF":
                 key1, *keys = args
                 return str(self.sets.sdiff(self.data_store.store, key1, *keys))
+
+            #Hashes
+            elif cmd == "HSET":
+                key, field, value = args
+                return str(self.hashes.hset(self.data_store.store, key, field, value))
+
+            elif cmd == "HMSET":
+                key, *field_value_pairs = args
+                field_value_dict = dict(zip(field_value_pairs[::2], field_value_pairs[1::2]))
+                return self.hashes.hmset(self.data_store.store, key, field_value_dict)
+
+            elif cmd == "HGET":
+                key, field = args
+                return self.hashes.hget(self.data_store.store, key, field)
+
+            elif cmd == "HGETALL":
+                key = args[0]
+                return str(self.hashes.hgetall(self.data_store.store, key))
+
+            elif cmd == "HDEL":
+                key, *fields = args
+                return str(self.hashes.hdel(self.data_store.store, key, *fields))
+
+            elif cmd == "HEXISTS":
+                key, field = args
+                return str(self.hashes.hexists(self.data_store.store, key, field))
 
 
             else:
