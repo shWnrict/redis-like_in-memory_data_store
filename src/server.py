@@ -12,6 +12,7 @@ from src.protocol import RESPProtocol
 from src.core.transaction_manager import TransactionManager
 from src.pubsub.publisher import PubSub
 from src.persistence.aof import AOF
+from src.persistence.snapshot import Snapshot
 
 from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
@@ -45,6 +46,7 @@ class Server:
         self.transaction_manager = TransactionManager()
         self.pubsub = PubSub()
         self.aof = AOF()
+        self.snapshot = Snapshot()
 
         self.strings = Strings()
         self.lists = Lists()
@@ -64,6 +66,7 @@ class Server:
         self.documents = Documents()
 
         self.aof.replay(self.process_command, self.data_store.store) # Replay the AOF log on startup
+        self.data_store.store = self.snapshot.load() # Load the snapshot on startup
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -119,7 +122,14 @@ class Server:
 
             elif client_id in self.transaction_manager.transactions:
                 return self.transaction_manager.queue_command(client_id, command)
-###
+### Snapshot
+            if cmd == "SAVE":
+                return self.snapshot.save(self.data_store.store)
+
+            elif cmd == "RESTORE":
+                self.data_store.store = self.snapshot.load()
+                return "OK"
+            
             # Log write commands to AOF
             if cmd in {"SET", "DEL", "HSET", "LPUSH", "RPUSH", "ZADD", "GEOADD", "PFADD", "TS.ADD", "DOC.INSERT"}:
                 self.aof.log_command(command)
@@ -134,6 +144,8 @@ class Server:
             elif cmd == "GET":
                 key = args[0]
                 return self.data_store.store.get(key, "(nil)")
+###
+
 ###
             #General
             elif cmd == "SET":
