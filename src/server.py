@@ -1,6 +1,7 @@
 # src/server.py
 import socket
 import threading
+
 from src.config import Config
 from src.logger import setup_logger
 from src.core.data_store import DataStore
@@ -10,6 +11,7 @@ from src.protocol import RESPProtocol
 
 from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
+from src.datatypes.sets import Sets
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -19,11 +21,14 @@ class Server:
         self.port = port
         self.max_clients = max_clients
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         self.data_store = DataStore()
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
+
         self.strings = Strings()
         self.lists = Lists()
+        self.sets = Sets()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -146,6 +151,33 @@ class Server:
             elif cmd == "LSET":
                 key, index, value = args
                 return self.lists.lset(self.data_store.store, key, index, value)
+
+            #sets
+            elif cmd == "SADD":
+                key, *members = args
+                return str(self.sets.sadd(self.data_store.store, key, *members))
+
+            elif cmd == "SREM":
+                key, *members = args
+                return str(self.sets.srem(self.data_store.store, key, *members))
+
+            elif cmd == "SISMEMBER":
+                key, member = args
+                return str(self.sets.sismember(self.data_store.store, key, member))
+
+            elif cmd == "SMEMBERS":
+                key = args[0]
+                return str(self.sets.smembers(self.data_store.store, key))
+
+            elif cmd == "SINTER":
+                return str(self.sets.sinter(self.data_store.store, *args))
+
+            elif cmd == "SUNION":
+                return str(self.sets.sunion(self.data_store.store, *args))
+
+            elif cmd == "SDIFF":
+                key1, *keys = args
+                return str(self.sets.sdiff(self.data_store.store, key1, *keys))
 
 
             else:
