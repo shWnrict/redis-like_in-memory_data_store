@@ -13,6 +13,7 @@ from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
 from src.datatypes.sets import Sets
 from src.datatypes.hashes import Hashes
+from src.datatypes.sorted_sets import SortedSets
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -31,6 +32,7 @@ class Server:
         self.lists = Lists()
         self.sets = Sets()
         self.hashes = Hashes()
+        self.sorted_sets = SortedSets()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -206,6 +208,29 @@ class Server:
             elif cmd == "HEXISTS":
                 key, field = args
                 return str(self.hashes.hexists(self.data_store.store, key, field))
+
+            #Sorted Sets
+            if cmd == "ZADD":
+                key, *rest = args
+                return str(self.sorted_sets.zadd(self.data_store.store, key, *rest))
+
+            elif cmd == "ZRANGE":
+                key, start, end = args[:3]
+                with_scores = "WITHSCORES" in args
+                return str(self.sorted_sets.zrange(self.data_store.store, key, start, end, with_scores))
+
+            elif cmd == "ZRANK":
+                key, member = args
+                return str(self.sorted_sets.zrank(self.data_store.store, key, member))
+
+            elif cmd == "ZREM":
+                key, *members = args
+                return str(self.sorted_sets.zrem(self.data_store.store, key, *members))
+
+            elif cmd == "ZRANGEBYSCORE":
+                key, min_score, max_score = args[:3]
+                with_scores = "WITHSCORES" in args
+                return str(self.sorted_sets.zrangebyscore(self.data_store.store, key, min_score, max_score, with_scores))
 
 
             else:
