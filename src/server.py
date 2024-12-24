@@ -19,6 +19,9 @@ from src.datatypes.streams import Streams
 from src.datatypes.json_type import JSONType
 from src.datatypes.bitmaps import Bitmaps
 
+from src.datatypes.geospatial import Geospatial
+from src.datatypes.probabilistic import HyperLogLog
+
 logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
@@ -37,9 +40,13 @@ class Server:
         self.sets = Sets()
         self.hashes = Hashes()
         self.sorted_sets = SortedSets()
+
         self.streams = Streams()
         self.json_type = JSONType()
         self.bitmaps = Bitmaps()
+
+        self.geospatial = Geospatial()
+        self.hyperloglogs = {}
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -311,6 +318,46 @@ class Server:
             elif cmd == "BITOP":
                 operation, destkey, *sourcekeys = args
                 return str(self.bitmaps.bitop(self.data_store.store, operation, destkey, *sourcekeys))
+            
+            #Geospatial
+            if cmd == "GEOADD":
+                key, *rest = args
+                return str(self.geospatial.geoadd(self.data_store.store, key, *rest))
+
+            elif cmd == "GEODIST":
+                key, member1, member2, *unit = args
+                unit = unit[0] if unit else "m"
+                return str(self.geospatial.geodist(self.data_store.store, key, member1, member2, unit))
+
+            elif cmd == "GEOSEARCH":
+                key, lat, lon, radius, *unit = args
+                unit = unit[0] if unit else "km"
+                return str(self.geospatial.geosearch(self.data_store.store, key, float(lat), float(lon), float(radius), unit))
+
+            #HyperLogLog
+            if cmd == "PFADD":
+                key, *values = args
+                if key not in self.hyperloglogs:
+                    self.hyperloglogs[key] = HyperLogLog()
+                for value in values:
+                    self.hyperloglogs[key].add(value)
+                return "1"
+
+            elif cmd == "PFCOUNT":
+                key = args[0]
+                if key not in self.hyperloglogs:
+                    return "0"
+                return str(self.hyperloglogs[key].count())
+
+            elif cmd == "PFMERGE":
+                destkey, *sourcekeys = args
+                if destkey not in self.hyperloglogs:
+                    self.hyperloglogs[destkey] = HyperLogLog()
+                for sourcekey in sourcekeys:
+                    if sourcekey not in self.hyperloglogs:
+                        return f"ERR {sourcekey} does not exist"
+                    self.hyperloglogs[destkey].merge(self.hyperloglogs[sourcekey])
+                return "OK"
 
 
             else:
