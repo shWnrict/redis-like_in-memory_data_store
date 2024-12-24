@@ -8,6 +8,7 @@ from src.core.data_store import DataStore
 from src.core.memory_manager import MemoryManager
 from src.core.expiry_manager import ExpiryManager
 from src.protocol import RESPProtocol
+from src.core.transaction_manager import TransactionManager
 
 from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
@@ -38,6 +39,7 @@ class Server:
         self.data_store = DataStore()
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
+        self.transaction_manager = TransactionManager()
 
         self.strings = Strings()
         self.lists = Lists()
@@ -80,12 +82,24 @@ class Server:
         finally:
             client_socket.close()
 
-    def process_command(self, command):
+    def process_command(self, command, client_id=None):
         try:
             cmd, *args = command.split()
             cmd = cmd.upper()
 
-            if cmd == "SET":
+            if cmd == "MULTI":
+                return self.transaction_manager.start_transaction(client_id)
+
+            elif cmd == "EXEC":
+                return self.transaction_manager.execute_transaction(client_id, self.data_store.store, self.process_command)
+
+            elif cmd == "DISCARD":
+                return self.transaction_manager.discard_transaction(client_id)
+
+            elif client_id in self.transaction_manager.transactions:
+                return self.transaction_manager.queue_command(client_id, command)
+
+            elif cmd == "SET":
                 key, value = args
                 if not self.memory_manager.can_store(value):
                     return "ERR Not enough memory"
@@ -328,7 +342,7 @@ class Server:
                 return str(self.bitmaps.bitop(self.data_store.store, operation, destkey, *sourcekeys))
             
             #Geospatial
-            if cmd == "GEOADD":
+            elif cmd == "GEOADD":
                 key, *rest = args
                 return str(self.geospatial.geoadd(self.data_store.store, key, *rest))
 
@@ -343,7 +357,7 @@ class Server:
                 return str(self.geospatial.geosearch(self.data_store.store, key, float(lat), float(lon), float(radius), unit))
 
             #HyperLogLog
-            if cmd == "PFADD":
+            elif cmd == "PFADD":
                 key, *values = args
                 if key not in self.hyperloglogs:
                     self.hyperloglogs[key] = HyperLogLog()
@@ -368,7 +382,7 @@ class Server:
                 return "OK"
 
             #Timeseries
-            if cmd == "TS.CREATE":
+            elif cmd == "TS.CREATE":
                 key = args[0]
                 return self.timeseries.create(self.data_store.store, key)
 
@@ -386,7 +400,7 @@ class Server:
                 return str(self.timeseries.range(self.data_store.store, key, start, end, aggregation))
 
             #Vectors
-            if cmd == "VECTOR.ADD":
+            elif cmd == "VECTOR.ADD":
                 key = args[0]
                 vector = list(map(float, args[1:]))
                 return self.vectors.add_vector(self.data_store.store, key, vector)
@@ -404,7 +418,7 @@ class Server:
                 return str(self.vectors.vector_operation(self.data_store.store, op, vector1, vector2))
             
             #Documents
-            if cmd == "DOC.INSERT":
+            elif cmd == "DOC.INSERT":
                 key, document = args
                 return self.documents.insert(self.data_store.store, key, document)
 
