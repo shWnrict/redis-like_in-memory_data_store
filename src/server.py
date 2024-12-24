@@ -15,6 +15,7 @@ from src.datatypes.sets import Sets
 from src.datatypes.hashes import Hashes
 from src.datatypes.sorted_sets import SortedSets
 from src.datatypes.streams import Streams
+from src.datatypes.json_type import JSONType
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -35,6 +36,7 @@ class Server:
         self.hashes = Hashes()
         self.sorted_sets = SortedSets()
         self.streams = Streams()
+        self.json_type = JSONType()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -271,7 +273,23 @@ class Server:
             elif cmd == "XACK":
                 key, group_name, *entry_ids = args
                 return str(self.streams.xack(self.data_store.store, key, group_name, *entry_ids))
+            
+            #JSON
+            elif cmd == "JSON.SET":
+                key, path, value = args
+                return self.json_type.json_set(self.data_store.store, key, path, value)
 
+            elif cmd == "JSON.GET":
+                key, path = args
+                return self.json_type.json_get(self.data_store.store, key, path)
+
+            elif cmd == "JSON.DEL":
+                key, path = args
+                return str(self.json_type.json_del(self.data_store.store, key, path))
+
+            elif cmd == "JSON.ARRAPPEND":
+                key, path, *values = args
+                return str(self.json_type.json_arrappend(self.data_store.store, key, path, *values))
 
 
 
