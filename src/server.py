@@ -23,6 +23,7 @@ from src.datatypes.sorted_sets import SortedSets
 from src.datatypes.streams import Streams
 from src.datatypes.json_type import JSONType
 from src.datatypes.bitmaps import Bitmaps
+from src.datatypes.bitfields import Bitfields
 
 from src.datatypes.geospatial import Geospatial
 from src.datatypes.probabilistic import HyperLogLog
@@ -62,6 +63,7 @@ class Server:
         self.streams = Streams()
         self.json_type = JSONType()
         self.bitmaps = Bitmaps()
+        self.bitfields = Bitfields(self.data_store)
 
         self.geospatial = Geospatial()
         self.hyperloglogs = {}
@@ -187,7 +189,7 @@ class Server:
 ###
 
 ###
-            #General
+    #General
             elif cmd == "SET":
                 key, value = args
                 if not self.memory_manager.can_store(value):
@@ -218,7 +220,7 @@ class Server:
                     return "1"
                 return "0"
 
-            #string
+#string
             elif cmd == "APPEND":
                 key, value = args
                 return str(self.strings.append(self.data_store.store, key, value))
@@ -252,7 +254,7 @@ class Server:
                 offset = int(offset)
                 return str(self.strings.setrange(self.data_store.store, key, offset, value))
 
-            #lists
+#lists
             elif cmd == "LPUSH":
                 key, *values = args
                 return str(self.lists.lpush(self.data_store.store, key, *values))
@@ -281,7 +283,7 @@ class Server:
                 key, index, value = args
                 return self.lists.lset(self.data_store.store, key, index, value)
 
-            #sets
+#sets
             elif cmd == "SADD":
                 key, *members = args
                 return str(self.sets.sadd(self.data_store.store, key, *members))
@@ -308,7 +310,7 @@ class Server:
                 key1, *keys = args
                 return str(self.sets.sdiff(self.data_store.store, key1, *keys))
 
-            #Hashes
+#Hashes
             elif cmd == "HSET":
                 key, field, value = args
                 return str(self.hashes.hset(self.data_store.store, key, field, value))
@@ -334,7 +336,7 @@ class Server:
                 key, field = args
                 return str(self.hashes.hexists(self.data_store.store, key, field))
 
-            #Sorted Sets
+#Sorted Sets
             elif cmd == "ZADD":
                 key, *rest = args
                 return str(self.sorted_sets.zadd(self.data_store.store, key, *rest))
@@ -357,7 +359,7 @@ class Server:
                 with_scores = "WITHSCORES" in args
                 return str(self.sorted_sets.zrangebyscore(self.data_store.store, key, min_score, max_score, with_scores))
 
-            #Streams
+#Streams
             elif cmd == "XADD":
                 key, entry_id, *field_value_pairs = args
                 fields = dict(zip(field_value_pairs[::2], field_value_pairs[1::2]))
@@ -395,7 +397,7 @@ class Server:
                 key, group_name, *entry_ids = args
                 return str(self.streams.xack(self.data_store.store, key, group_name, *entry_ids))
             
-            #JSON
+#JSON
             elif cmd == "JSON.SET":
                 key, path, value = args
                 return self.json_type.json_set(self.data_store.store, key, path, value)
@@ -412,7 +414,7 @@ class Server:
                 key, path, *values = args
                 return str(self.json_type.json_arrappend(self.data_store.store, key, path, *values))
             
-            #Bitmaps
+#Bitmaps
             elif cmd == "SETBIT":
                 key, offset, value = args
                 return str(self.bitmaps.setbit(self.data_store.store, key, int(offset), value))
@@ -429,8 +431,21 @@ class Server:
             elif cmd == "BITOP":
                 operation, destkey, *sourcekeys = args
                 return str(self.bitmaps.bitop(self.data_store.store, operation, destkey, *sourcekeys))
-            
-            #Geospatial
+# Bitfield
+            if cmd == "BITFIELD":
+                sub_cmd = args[0].upper()
+                key = args[1]
+                if sub_cmd == "GET":
+                    offset, size = map(int, args[2:])
+                    return self.bitfields.get(key, offset, size)
+                elif sub_cmd == "SET":
+                    offset, size, value = map(int, args[2:])
+                    return self.bitfields.set(key, offset, size, value)
+                elif sub_cmd == "INCRBY":
+                    offset, size, delta = map(int, args[2:])
+                    return self.bitfields.incrby(key, offset, size, delta)
+
+#Geospatial
             elif cmd == "GEOADD":
                 key, *rest = args
                 return str(self.geospatial.geoadd(self.data_store.store, key, *rest))
@@ -445,7 +460,7 @@ class Server:
                 unit = unit[0] if unit else "km"
                 return str(self.geospatial.geosearch(self.data_store.store, key, float(lat), float(lon), float(radius), unit))
 
-            #HyperLogLog
+#HyperLogLog
             elif cmd == "PFADD":
                 key, *values = args
                 if key not in self.hyperloglogs:
@@ -470,7 +485,7 @@ class Server:
                     self.hyperloglogs[destkey].merge(self.hyperloglogs[sourcekey])
                 return "OK"
 
-            #Timeseries
+#Timeseries
             elif cmd == "TS.CREATE":
                 key = args[0]
                 return self.timeseries.create(self.data_store.store, key)
@@ -488,7 +503,7 @@ class Server:
                 aggregation = aggregation[0] if aggregation else None
                 return str(self.timeseries.range(self.data_store.store, key, start, end, aggregation))
 
-            #Vectors
+#Vectors
             elif cmd == "VECTOR.ADD":
                 key = args[0]
                 vector = list(map(float, args[1:]))
@@ -506,7 +521,7 @@ class Server:
                 vector2 = list(map(float, args[len(args) // 2:]))
                 return str(self.vectors.vector_operation(self.data_store.store, op, vector1, vector2))
             
-            #Documents
+#Documents
             elif cmd == "DOC.INSERT":
                 key, document = args
                 return self.documents.insert(self.data_store.store, key, document)
