@@ -53,7 +53,7 @@ class Server:
         self.aof = AOF()
         self.snapshot = Snapshot()
         self.changes_since_snapshot = 0
-        self.snapshot_threshold = 1000
+        self.snapshot_threshold = Config.SNAPSHOT_THRESHOLD
 
         self.strings = Strings()
         self.lists = Lists()

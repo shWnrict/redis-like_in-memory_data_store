@@ -4,3 +4,4 @@ class Config:
     LOG_LEVEL = "INFO"
     MAX_CLIENTS = 1000
     DATA_LIMIT = 1024 * 1024  # 1 MB per key
+    SNAPSHOT_THRESHOLD = 1000  # Number of changes before triggering a snapshot
