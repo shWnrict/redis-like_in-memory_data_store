@@ -8,6 +8,8 @@ from src.core.memory_manager import MemoryManager
 from src.core.expiry_manager import ExpiryManager
 from src.protocol import RESPProtocol
 
+from src.datatypes.strings import Strings
+
 logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
@@ -19,6 +21,7 @@ class Server:
         self.data_store = DataStore()
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
+        self.strings = Strings()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -78,6 +81,41 @@ class Server:
                     self.expiry_manager.set_expiry(key, ttl)
                     return "1"
                 return "0"
+
+            #string
+            elif cmd == "APPEND":
+                key, value = args
+                return str(self.strings.append(self.data_store.store, key, value))
+
+            elif cmd == "STRLEN":
+                key = args[0]
+                return str(self.strings.strlen(self.data_store.store, key))
+
+            elif cmd == "INCR":
+                key = args[0]
+                return self.strings.incr(self.data_store.store, key)
+
+            elif cmd == "DECR":
+                key = args[0]
+                return self.strings.decr(self.data_store.store, key)
+
+            elif cmd == "INCRBY":
+                key, increment = args
+                return self.strings.incrby(self.data_store.store, key, increment)
+
+            elif cmd == "DECRBY":
+                key, decrement = args
+                return self.strings.decrby(self.data_store.store, key, decrement)
+
+            elif cmd == "GETRANGE":
+                key, start, end = args
+                return self.strings.getrange(self.data_store.store, key, start, end)
+
+            elif cmd == "SETRANGE":
+                key, offset, value = args
+                offset = int(offset)
+                return str(self.strings.setrange(self.data_store.store, key, offset, value))
+
 
             else:
                 return "ERR Unknown command"
