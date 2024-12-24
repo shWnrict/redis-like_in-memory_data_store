@@ -23,6 +23,8 @@ from src.datatypes.geospatial import Geospatial
 from src.datatypes.probabilistic import HyperLogLog
 from src.datatypes.timeseries import TimeSeries
 
+from src.datatypes.vectors import Vectors
+
 logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
@@ -49,6 +51,8 @@ class Server:
         self.geospatial = Geospatial()
         self.hyperloglogs = {}
         self.timeseries = TimeSeries()
+
+        self.vectors = Vectors()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -378,6 +382,24 @@ class Server:
                 key, start, end, *aggregation = args
                 aggregation = aggregation[0] if aggregation else None
                 return str(self.timeseries.range(self.data_store.store, key, start, end, aggregation))
+
+            #Vectors
+            if cmd == "VECTOR.ADD":
+                key = args[0]
+                vector = list(map(float, args[1:]))
+                return self.vectors.add_vector(self.data_store.store, key, vector)
+
+            elif cmd == "VECTOR.SIMILARITY":
+                metric = args[0].lower()
+                query_vector = list(map(float, args[1:-1]))
+                top_k = int(args[-1])
+                return str(self.vectors.similarity_search(self.data_store.store, query_vector, metric, top_k))
+
+            elif cmd in {"VECTOR.ADD", "VECTOR.SUB", "VECTOR.DOT"}:
+                op = cmd.split(".")[-1].lower()
+                vector1 = list(map(float, args[:len(args) // 2]))
+                vector2 = list(map(float, args[len(args) // 2:]))
+                return str(self.vectors.vector_operation(self.data_store.store, op, vector1, vector2))
 
 
             else:
