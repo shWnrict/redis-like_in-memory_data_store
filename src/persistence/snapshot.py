@@ -4,6 +4,7 @@ from src.logger import setup_logger
 
 logger = setup_logger("snapshot")
 
+# Extend src/persistence/snapshot.py for periodic saving
 class Snapshot:
     def __init__(self, file_path="snapshot.rdb"):
         self.file_path = file_path
@@ -18,7 +19,7 @@ class Snapshot:
             logger.info(f"Snapshot saved to {self.file_path}")
             return "OK"
         except Exception as e:
-            logger.error(f"Failed to save snapshot: {e}")
+            logger.error(f"Snapshot save failed: {e}")
             return "ERR Snapshot save failed"
 
     def load(self):
@@ -27,12 +28,10 @@ class Snapshot:
         """
         try:
             with open(self.file_path, "r") as f:
-                data_store = json.load(f)
-            logger.info(f"Snapshot loaded from {self.file_path}")
-            return data_store
+                return json.load(f)
         except FileNotFoundError:
-            logger.warning(f"No snapshot file found at {self.file_path}")
+            logger.warning("No snapshot file found")
             return {}
         except Exception as e:
-            logger.error(f"Failed to load snapshot: {e}")
+            logger.error(f"Snapshot load failed: {e}")
             return {}

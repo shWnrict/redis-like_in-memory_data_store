@@ -45,8 +45,11 @@ class Server:
         self.expiry_manager = ExpiryManager(self.data_store)
         self.transaction_manager = TransactionManager()
         self.pubsub = PubSub()
+
         self.aof = AOF()
         self.snapshot = Snapshot()
+        self.changes_since_snapshot = 0
+        self.snapshot_threshold = 1000
 
         self.strings = Strings()
         self.lists = Lists()
@@ -123,27 +126,36 @@ class Server:
             elif client_id in self.transaction_manager.transactions:
                 return self.transaction_manager.queue_command(client_id, command)
 ### Snapshot
-            if cmd == "SAVE":
-                return self.snapshot.save(self.data_store.store)
-
-            elif cmd == "RESTORE":
-                self.data_store.store = self.snapshot.load()
-                return "OK"
-            
-            # Log write commands to AOF
+            # Incremental AOF and snapshot integration
             if cmd in {"SET", "DEL", "HSET", "LPUSH", "RPUSH", "ZADD", "GEOADD", "PFADD", "TS.ADD", "DOC.INSERT"}:
                 self.aof.log_command(command)
+                self.changes_since_snapshot += 1
 
-            # Example: SET command
+            # Trigger snapshot if threshold reached
+            if self.changes_since_snapshot >= self.snapshot_threshold:
+                self.snapshot.save(self.data_store.store)
+                self.aof.truncate(self.data_store.store)
+                self.changes_since_snapshot = 0
+
+            # Example command: SET
             if cmd == "SET":
                 key, value = args
                 self.data_store.store[key] = value
                 return "OK"
 
-            # Other command implementations (e.g., GET, etc.)
+            # Example command: GET
             elif cmd == "GET":
                 key = args[0]
                 return self.data_store.store.get(key, "(nil)")
+
+            # Manual snapshot save
+            elif cmd == "SAVE":
+                return self.snapshot.save(self.data_store.store)
+
+            # Restore from snapshot
+            elif cmd == "RESTORE":
+                self.data_store.store = self.snapshot.load()
+                return "OK"
 ###
 
 ###

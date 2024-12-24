@@ -18,6 +18,23 @@ class AOF:
         except Exception as e:
             logger.error(f"AOF: Failed to log command -> {command}, Error: {e}")
 
+    def truncate(self, snapshot_data):
+        """
+        Rewrite the AOF file using the latest snapshot data.
+        """
+        try:
+            with open(self.file_path, "w") as f:
+                for key, value in snapshot_data.items():
+                    if isinstance(value, dict):
+                        f.write(f"HSET {key} {' '.join(f'{k} {v}' for k, v in value.items())}\n")
+                    elif isinstance(value, list):
+                        f.write(f"LPUSH {key} {' '.join(map(str, value[::-1]))}\n")
+                    else:
+                        f.write(f"SET {key} {value}\n")
+            logger.info("AOF: File truncated with snapshot data")
+        except Exception as e:
+            logger.error(f"AOF: Failed to truncate: {e}")
+
     def replay(self, process_command_func, data_store):
         """
         Replay the AOF file to restore the data store.
