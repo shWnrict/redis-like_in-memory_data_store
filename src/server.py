@@ -24,6 +24,7 @@ from src.datatypes.probabilistic import HyperLogLog
 from src.datatypes.timeseries import TimeSeries
 
 from src.datatypes.vectors import Vectors
+from src.datatypes.documents import Documents
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -53,6 +54,7 @@ class Server:
         self.timeseries = TimeSeries()
 
         self.vectors = Vectors()
+        self.documents = Documents()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -400,6 +402,27 @@ class Server:
                 vector1 = list(map(float, args[:len(args) // 2]))
                 vector2 = list(map(float, args[len(args) // 2:]))
                 return str(self.vectors.vector_operation(self.data_store.store, op, vector1, vector2))
+            
+            #Documents
+            if cmd == "DOC.INSERT":
+                key, document = args
+                return self.documents.insert(self.data_store.store, key, document)
+
+            elif cmd == "DOC.FIND":
+                key, query = args
+                return str(self.documents.find(self.data_store.store, key, query))
+
+            elif cmd == "DOC.UPDATE":
+                key, query, update_fields = args
+                return str(self.documents.update(self.data_store.store, key, query, update_fields))
+
+            elif cmd == "DOC.DELETE":
+                key, query = args
+                return str(self.documents.delete(self.data_store.store, key, query))
+
+            elif cmd == "DOC.AGGREGATE":
+                key, operation, field = args
+                return str(self.documents.aggregate(self.data_store.store, key, operation, field))
 
 
             else:
