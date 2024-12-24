@@ -1,46 +1,43 @@
+# Extend src/protocol.py for pipelining
 class RESPProtocol:
     @staticmethod
-    def parse_request(data):
+    def parse_message(data):
         """
-        Parses incoming RESP-formatted requests.
-        Supports simple strings, bulk strings, errors, integers, and arrays.
+        Parse one or more RESP messages from the client.
+        Supports pipelining by returning a list of commands.
         """
-        if data.startswith("+"):  # Simple String
-            return data[1:].strip()
-        elif data.startswith("$"):  # Bulk String
-            _, value = data.split("\r\n", 1)
-            return value.strip()
-        elif data.startswith("-"):  # Error
-            return {"error": data[1:].strip()}
-        elif data.startswith(":"):  # Integer
-            return int(data[1:].strip())
-        elif data.startswith("*"):  # Array
-            parts = data.split("\r\n")
-            length = int(parts[0][1:])  # Number of elements
-            elements = parts[1:]
-            result = []
-            for i in range(length):
-                if elements[i].startswith("$"):
-                    result.append(elements[i+1])
-            return result
-        else:
-            raise ValueError("Unsupported RESP format")
+        lines = data.splitlines()
+        commands = []
+        i = 0
+
+        while i < len(lines):
+            if lines[i][0] != "*":
+                raise ValueError("Invalid RESP message")
+            command_count = int(lines[i][1:])
+            command_parts = []
+            for _ in range(command_count):
+                i += 2  # Skip bulk string length and value lines
+                command_parts.append(lines[i])
+            commands.append(command_parts)
+            i += 1
+
+        return commands
 
     @staticmethod
     def format_response(response):
         """
-        Formats the response as a RESP simple string, bulk string, error, integer, or array.
+        Format a Python object into a RESP-compatible response.
         """
-        if isinstance(response, str):
-            return f"+{response}\r\n"  # Simple String
-        elif isinstance(response, int):
-            return f":{response}\r\n"  # Integer
-        elif isinstance(response, list):
-            array_response = f"*{len(response)}\r\n"
+        if isinstance(response, list):
+            resp = f"*{len(response)}\r\n"
             for item in response:
-                array_response += f"${len(item)}\r\n{item}\r\n"
-            return array_response  # Array
-        elif isinstance(response, dict) and "error" in response:
-            return f"-{response['error']}\r\n"  # Error
+                resp += RESPProtocol.format_response(item)
+            return resp
+        elif response is None:
+            return "$-1\r\n"  # Null Bulk String
+        elif isinstance(response, str):
+            return f"${len(response)}\r\n{response}\r\n"
+        elif isinstance(response, int):
+            return f":{response}\r\n"
         else:
-            return f"${len(response)}\r\n{response}\r\n"  # Bulk String
+            raise ValueError("Unsupported response type")

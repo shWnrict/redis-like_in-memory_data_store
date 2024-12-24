@@ -39,8 +39,10 @@ class Server:
         self.port = port
         self.max_clients = max_clients
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+        self.server_socket.setblocking(False)  # Enable non-blocking mode
         self.data_store = DataStore()
+        self.command_router = CommandRouter(self)
+
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
         self.transaction_manager = TransactionManager()
@@ -72,26 +74,52 @@ class Server:
         self.data_store.store = self.snapshot.load() # Load the snapshot on startup
 
     def start(self):
+        """
+        Start the server and handle connections asynchronously.
+        """
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(self.max_clients)
         logger.info(f"Server started on {self.host}:{self.port}")
 
         while True:
-            client_socket, client_address = self.server_socket.accept()
-            logger.info(f"New connection from {client_address}")
-            threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+            try:
+                client_socket, _ = self.server_socket.accept()
+                client_socket.setblocking(False)
+                threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+            except BlockingIOError:
+                continue
 
     def handle_client(self, client_socket):
+        """
+        Handle communication with a connected client, supporting pipelining and batching.
+        """
         try:
-            data = client_socket.recv(1024)
-            if not data:
-                return
-            command = RESPProtocol.parse_request(data.decode())
-            response = self.process_command(command)
-            client_socket.sendall(RESPProtocol.format_response(response).encode())
+            buffer = b""
+            while True:
+                try:
+                    data = client_socket.recv(1024)
+                    if not data:
+                        break
+
+                    buffer += data
+                    if b"\r\n" not in buffer:
+                        continue
+
+                    commands = RESPProtocol.parse_message(buffer.decode())
+                    responses = []
+
+                    for command in commands:
+                        response = self.command_router.route_command(command)
+                        responses.append(response)
+
+                    # Send all responses in one go
+                    client_socket.send(RESPProtocol.format_response(responses).encode())
+                    buffer = b""
+
+                except BlockingIOError:
+                    pass
         except Exception as e:
             logger.error(f"Error handling client: {e}")
-            client_socket.sendall(RESPProtocol.format_response("ERR Internal Server Error").encode())
         finally:
             client_socket.close()
 
