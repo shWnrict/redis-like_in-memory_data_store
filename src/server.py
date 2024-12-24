@@ -8,6 +8,7 @@ from src.core.data_store import DataStore
 from src.core.memory_manager import MemoryManager
 from src.core.expiry_manager import ExpiryManager
 from src.protocol import RESPProtocol
+from src.core.command_router import CommandRouter
 
 from src.core.transaction_manager import TransactionManager
 from src.pubsub.publisher import PubSub
