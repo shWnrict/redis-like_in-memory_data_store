@@ -83,3 +83,72 @@ class Streams:
             length = len(store[key])
             logger.info(f"XLEN {key} -> {length}")
             return length
+        
+#extended
+    def __initialize_stream(self, store, key):
+        if key not in store:
+            store[key] = {"entries": {}, "group_data": {}}
+
+    def xgroup_create(self, store, key, group_name, start_id="0-0"):
+        """
+        Creates a consumer group for the stream.
+        """
+        with self.lock:
+            self.__initialize_stream(store, key)
+            stream = store[key]
+
+            if group_name in stream["group_data"]:
+                return "ERR Group already exists"
+            
+            stream["group_data"][group_name] = {"consumers": {}, "pending": {}}
+            logger.info(f"XGROUP CREATE {key} {group_name} -> Start at {start_id}")
+            return "OK"
+
+    def xreadgroup(self, store, group_name, consumer_name, key, count=None, last_id=">"):
+        """
+        Reads messages for a specific consumer in the group.
+        """
+        with self.lock:
+            if key not in store:
+                return "ERR Stream does not exist"
+            stream = store[key]
+
+            if group_name not in stream["group_data"]:
+                return "ERR Group does not exist"
+
+            group = stream["group_data"][group_name]
+
+            if consumer_name not in group["consumers"]:
+                group["consumers"][consumer_name] = []
+
+            entries = list(stream["entries"].items())
+            result = []
+
+            for entry_id, entry_data in entries:
+                if entry_id > last_id or entry_id in group["pending"]:
+                    group["pending"][entry_id] = {"data": entry_data, "consumer": consumer_name}
+                    group["consumers"][consumer_name].append(entry_id)
+                    result.append((entry_id, entry_data))
+                    if count and len(result) >= int(count):
+                        break
+
+            logger.info(f"XREADGROUP {group_name} {consumer_name} {key} -> {result}")
+            return result
+
+    def xack(self, store, key, group_name, *entry_ids):
+        """
+        Acknowledges the processing of messages in the group.
+        """
+        with self.lock:
+            if key not in store or group_name not in store[key]["group_data"]:
+                return 0
+            group = store[key]["group_data"][group_name]
+
+            acked = 0
+            for entry_id in entry_ids:
+                if entry_id in group["pending"]:
+                    del group["pending"][entry_id]
+                    acked += 1
+
+            logger.info(f"XACK {key} {group_name} -> {acked} entries acknowledged")
+            return acked

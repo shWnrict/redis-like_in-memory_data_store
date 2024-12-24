@@ -255,6 +255,26 @@ class Server:
                 return str(self.streams.xlen(self.data_store.store, key))
 
 
+            elif cmd == "XGROUP":
+                subcmd = args[0].upper()
+                if subcmd == "CREATE":
+                    key, group_name, start_id = args[1:]
+                    return self.streams.xgroup_create(self.data_store.store, key, group_name, start_id)
+                else:
+                    return "ERR Unknown XGROUP subcommand"
+
+            elif cmd == "XREADGROUP":
+                group_name, consumer_name, key, count = args[:4]
+                last_id = args[4] if len(args) > 4 else ">"
+                return str(self.streams.xreadgroup(self.data_store.store, group_name, consumer_name, key, count, last_id))
+
+            elif cmd == "XACK":
+                key, group_name, *entry_ids = args
+                return str(self.streams.xack(self.data_store.store, key, group_name, *entry_ids))
+
+
+
+
             else:
                 return "ERR Unknown command"
         except Exception as e:
