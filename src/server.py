@@ -14,6 +14,7 @@ from src.datatypes.lists import Lists
 from src.datatypes.sets import Sets
 from src.datatypes.hashes import Hashes
 from src.datatypes.sorted_sets import SortedSets
+from src.datatypes.streams import Streams
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -33,6 +34,7 @@ class Server:
         self.sets = Sets()
         self.hashes = Hashes()
         self.sorted_sets = SortedSets()
+        self.streams = Streams()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -210,7 +212,7 @@ class Server:
                 return str(self.hashes.hexists(self.data_store.store, key, field))
 
             #Sorted Sets
-            if cmd == "ZADD":
+            elif cmd == "ZADD":
                 key, *rest = args
                 return str(self.sorted_sets.zadd(self.data_store.store, key, *rest))
 
@@ -231,6 +233,26 @@ class Server:
                 key, min_score, max_score = args[:3]
                 with_scores = "WITHSCORES" in args
                 return str(self.sorted_sets.zrangebyscore(self.data_store.store, key, min_score, max_score, with_scores))
+
+            #Streams
+            elif cmd == "XADD":
+                key, entry_id, *field_value_pairs = args
+                fields = dict(zip(field_value_pairs[::2], field_value_pairs[1::2]))
+                return self.streams.xadd(self.data_store.store, key, entry_id, **fields)
+
+            elif cmd == "XREAD":
+                key, count = args[:2]
+                last_id = args[2] if len(args) > 2 else "0-0"
+                return str(self.streams.xread(self.data_store.store, key, count, last_id))
+
+            elif cmd == "XRANGE":
+                key, start, end = args[:3]
+                count = args[3] if len(args) > 3 else None
+                return str(self.streams.xrange(self.data_store.store, key, start, end, count))
+
+            elif cmd == "XLEN":
+                key = args[0]
+                return str(self.streams.xlen(self.data_store.store, key))
 
 
             else:
