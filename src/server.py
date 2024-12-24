@@ -8,7 +8,9 @@ from src.core.data_store import DataStore
 from src.core.memory_manager import MemoryManager
 from src.core.expiry_manager import ExpiryManager
 from src.protocol import RESPProtocol
+
 from src.core.transaction_manager import TransactionManager
+from src.pubsub.publisher import PubSub
 
 from src.datatypes.strings import Strings
 from src.datatypes.lists import Lists
@@ -40,6 +42,7 @@ class Server:
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
         self.transaction_manager = TransactionManager()
+        self.pubsub = PubSub()
 
         self.strings = Strings()
         self.lists = Lists()
@@ -87,6 +90,20 @@ class Server:
             cmd, *args = command.split()
             cmd = cmd.upper()
 
+            #Pub/Sub
+            if cmd == "SUBSCRIBE":
+                channel = args[0]
+                return self.pubsub.subscribe(client_id, channel)
+
+            elif cmd == "UNSUBSCRIBE":
+                channel = args[0] if args else None
+                return self.pubsub.unsubscribe(client_id, channel)
+
+            elif cmd == "PUBLISH":
+                channel, message = args
+                return str(self.pubsub.publish(channel, message))
+
+            #Transactions
             if cmd == "MULTI":
                 return self.transaction_manager.start_transaction(client_id)
 
@@ -99,6 +116,7 @@ class Server:
             elif client_id in self.transaction_manager.transactions:
                 return self.transaction_manager.queue_command(client_id, command)
 
+            #General
             elif cmd == "SET":
                 key, value = args
                 if not self.memory_manager.can_store(value):
