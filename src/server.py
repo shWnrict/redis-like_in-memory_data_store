@@ -21,6 +21,7 @@ from src.datatypes.bitmaps import Bitmaps
 
 from src.datatypes.geospatial import Geospatial
 from src.datatypes.probabilistic import HyperLogLog
+from src.datatypes.timeseries import TimeSeries
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -47,6 +48,7 @@ class Server:
 
         self.geospatial = Geospatial()
         self.hyperloglogs = {}
+        self.timeseries = TimeSeries()
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
@@ -358,6 +360,24 @@ class Server:
                         return f"ERR {sourcekey} does not exist"
                     self.hyperloglogs[destkey].merge(self.hyperloglogs[sourcekey])
                 return "OK"
+
+            #Timeseries
+            if cmd == "TS.CREATE":
+                key = args[0]
+                return self.timeseries.create(self.data_store.store, key)
+
+            elif cmd == "TS.ADD":
+                key, timestamp, value = args
+                return self.timeseries.add(self.data_store.store, key, timestamp, value)
+
+            elif cmd == "TS.GET":
+                key = args[0]
+                return str(self.timeseries.get(self.data_store.store, key))
+
+            elif cmd == "TS.RANGE":
+                key, start, end, *aggregation = args
+                aggregation = aggregation[0] if aggregation else None
+                return str(self.timeseries.range(self.data_store.store, key, start, end, aggregation))
 
 
             else:
