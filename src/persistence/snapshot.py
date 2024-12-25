@@ -1,5 +1,6 @@
 # src/persistence/snapshot.py
 import json
+import os
 from src.logger import setup_logger
 
 logger = setup_logger("snapshot")
@@ -10,18 +11,18 @@ class Snapshot:
         self.file_path = file_path
 
     def save(self, data_store):
-        """
-        Save the current state of the data store to a snapshot file.
-        """
+        temp_path = f"{self.file_path}.tmp"
         try:
-            with open(self.file_path, "w") as f:
+            with open(temp_path, "w") as f:
                 json.dump(data_store, f)
-            logger.info(f"Snapshot saved to {self.file_path}")
+            os.replace(temp_path, self.file_path)
             return "OK"
-        except Exception as e:
+        except IOError as e:
             logger.error(f"Snapshot save failed: {e}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             return "ERR Snapshot save failed"
-
+    
     def load(self):
         """
         Load the data store state from a snapshot file.

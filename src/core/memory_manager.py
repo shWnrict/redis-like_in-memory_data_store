@@ -1,11 +1,32 @@
-from src.config import Config
 # src/core/memory_manager.py
+from src.config import Config
+import threading
+import time
 import sys
 
 class MemoryManager:
-    def __init__(self, max_memory=Config.DATA_LIMIT):
-        self.max_memory = max_memory
+    def __init__(self):
+        self.max_memory = Config.DATA_LIMIT
         self.current_memory = 0
+        self.gc_threshold = 0.8 * self.max_memory  # 80% threshold
+        self._start_gc_thread()
+
+    def _start_gc_thread(self):
+        def gc_routine():
+            while True:
+                if self.current_memory > self.gc_threshold:
+                    self._collect_garbage()
+                time.sleep(60)  # Check every minute
+                
+        threading.Thread(target=gc_routine, daemon=True).start()
+
+    def _collect_garbage(self):
+        with self.lock:
+            # Remove expired keys first
+            self._remove_expired()
+            # If still above threshold, remove least recently used
+            if self.current_memory > self.gc_threshold:
+                self._remove_lru()
 
     def calculate_size(self, value):
         return sys.getsizeof(value)

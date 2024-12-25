@@ -37,6 +37,10 @@ logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
     def __init__(self, host=Config.HOST, port=Config.PORT, max_clients=Config.MAX_CLIENTS):
+        self.running = False
+        self.clients = set()
+        self.clients_lock = threading.Lock()
+
         self.host = host
         self.port = port
         self.max_clients = max_clients
@@ -92,12 +96,28 @@ class Server:
             except BlockingIOError:
                 continue
 
+    def stop(self):
+        self.running = False
+        # Close all client connections
+        with self.clients_lock:
+            for client in self.clients:
+                try:
+                    client.close()
+                except:
+                    pass
+        # Save final snapshot
+        self.snapshot.save(self.data_store.store)
+        self.server_socket.close()
+
     def handle_client(self, client_socket):
         """
         Handle communication with a connected client, supporting pipelining and batching.
         """
+        with self.clients_lock:
+            self.clients.add(client_socket)
         try:
-            buffer = b""
+            while self.running:
+                buffer = b""
             while True:
                 try:
                     data = client_socket.recv(1024)
@@ -124,6 +144,8 @@ class Server:
         except Exception as e:
             logger.error(f"Error handling client: {e}")
         finally:
+            with self.clients_lock:
+                self.clients.remove(client_socket)
             client_socket.close()
 
     def process_command(self, command, client_id=None):
