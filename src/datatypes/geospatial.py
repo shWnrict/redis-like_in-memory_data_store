@@ -22,6 +22,14 @@ class Geospatial:
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return self.EARTH_RADIUS_KM * c
 
+    def _validate_unit(self, unit):
+        """
+        Validate the distance unit.
+        """
+        if unit not in {"m", "km", "mi"}:
+            return "ERR Unknown unit"
+        return None
+
     def geoadd(self, store, key, *args):
         """
         Add geospatial data to the store.
@@ -37,9 +45,14 @@ class Geospatial:
 
             count = 0
             for i in range(0, len(args), 3):
-                lon, lat, member = float(args[i]), float(args[i + 1]), args[i + 2]
-                store[key][member] = (lat, lon)
-                count += 1
+                try:
+                    lon, lat = float(args[i]), float(args[i + 1])
+                    member = args[i + 2]
+                    store[key][member] = (lat, lon)
+                    count += 1
+                except ValueError:
+                    return "ERR Invalid longitude or latitude"
+
             logger.info(f"GEOADD {key} -> {count} locations added")
             return count
 
@@ -58,14 +71,16 @@ class Geospatial:
 
             distance_km = self.__calculate_distance(loc1[0], loc1[1], loc2[0], loc2[1])
 
+            unit_error = self._validate_unit(unit)
+            if unit_error:
+                return unit_error
+
             if unit == "m":
                 return distance_km * 1000
             elif unit == "km":
                 return distance_km
             elif unit == "mi":
                 return distance_km * 0.621371
-            else:
-                return "ERR Unknown unit"
 
     def geosearch(self, store, key, lat, lon, radius, unit="km"):
         """
@@ -76,13 +91,16 @@ class Geospatial:
                 return []
 
             radius_km = radius if unit == "km" else radius / 1000 if unit == "m" else radius * 1.60934 if unit == "mi" else 0
-            if radius_km == 0:
-                return "ERR Unknown unit"
+
+            unit_error = self._validate_unit(unit)
+            if unit_error:
+                return unit_error
 
             result = []
             for member, (lat2, lon2) in store[key].items():
                 distance_km = self.__calculate_distance(lat, lon, lat2, lon2)
                 if distance_km <= radius_km:
                     result.append((member, distance_km))
+
             logger.info(f"GEOSEARCH {key} -> Found {len(result)} locations")
             return result

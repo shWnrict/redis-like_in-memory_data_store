@@ -9,6 +9,12 @@ class Documents:
     def __init__(self):
         self.lock = threading.Lock()
 
+    def _validate_json(self, json_string):
+        try:
+            return json.loads(json_string)
+        except json.JSONDecodeError:
+            return None
+
     def insert(self, store, key, document):
         """
         Insert a document into the database.
@@ -19,13 +25,12 @@ class Documents:
             if not isinstance(store[key], list):
                 return "ERR Key is not a document collection"
 
-            try:
-                document = json.loads(document)
-            except json.JSONDecodeError:
+            document_data = self._validate_json(document)
+            if document_data is None:
                 return "ERR Invalid JSON document"
 
-            store[key].append(document)
-            logger.info(f"INSERT {key} -> {document}")
+            store[key].append(document_data)
+            logger.info(f"INSERT {key} -> {document_data}")
             return "OK"
 
     def find(self, store, key, query):
@@ -36,12 +41,11 @@ class Documents:
             if key not in store or not isinstance(store[key], list):
                 return "ERR Collection does not exist"
 
-            try:
-                query = json.loads(query)
-            except json.JSONDecodeError:
+            query_data = self._validate_json(query)
+            if query_data is None:
                 return "ERR Invalid JSON query"
 
-            result = [doc for doc in store[key] if self.__matches_query(doc, query)]
+            result = [doc for doc in store[key] if self._matches_query(doc, query_data)]
             logger.info(f"FIND {key} -> {result}")
             return result
 
@@ -53,16 +57,16 @@ class Documents:
             if key not in store or not isinstance(store[key], list):
                 return "ERR Collection does not exist"
 
-            try:
-                query = json.loads(query)
-                update_fields = json.loads(update_fields)
-            except json.JSONDecodeError:
+            query_data = self._validate_json(query)
+            update_data = self._validate_json(update_fields)
+
+            if query_data is None or update_data is None:
                 return "ERR Invalid JSON"
 
             updated_count = 0
             for doc in store[key]:
-                if self.__matches_query(doc, query):
-                    doc.update(update_fields)
+                if self._matches_query(doc, query_data):
+                    doc.update(update_data)
                     updated_count += 1
 
             logger.info(f"UPDATE {key} -> {updated_count} documents updated")
@@ -76,13 +80,12 @@ class Documents:
             if key not in store or not isinstance(store[key], list):
                 return "ERR Collection does not exist"
 
-            try:
-                query = json.loads(query)
-            except json.JSONDecodeError:
+            query_data = self._validate_json(query)
+            if query_data is None:
                 return "ERR Invalid JSON query"
 
             initial_count = len(store[key])
-            store[key] = [doc for doc in store[key] if not self.__matches_query(doc, query)]
+            store[key] = [doc for doc in store[key] if not self._matches_query(doc, query_data)]
             deleted_count = initial_count - len(store[key])
 
             logger.info(f"DELETE {key} -> {deleted_count} documents deleted")
@@ -109,7 +112,7 @@ class Documents:
             logger.info(f"AGGREGATE {key} {operation.upper()} {field} -> {result}")
             return result
 
-    def __matches_query(self, document, query):
+    def _matches_query(self, document, query):
         """
         Helper method to match a document against a query.
         """

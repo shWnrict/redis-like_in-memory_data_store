@@ -7,7 +7,18 @@ logger = setup_logger("timeseries")
 class TimeSeries:
     def __init__(self):
         self.lock = threading.Lock()
-        self.data = {}
+
+    def _validate_timestamp(self, timestamp):
+        try:
+            return int(timestamp)
+        except ValueError:
+            return None
+
+    def _validate_value(self, value):
+        try:
+            return float(value)
+        except ValueError:
+            return None
 
     def create(self, store, key):
         """
@@ -27,9 +38,13 @@ class TimeSeries:
         with self.lock:
             if key not in store or not isinstance(store[key], list):
                 return "ERR Time series does not exist"
-            timestamp = int(timestamp)
-            value = float(value)
-            # Insert in sorted order
+
+            timestamp = self._validate_timestamp(timestamp)
+            value = self._validate_value(value)
+
+            if timestamp is None or value is None:
+                return "ERR Invalid timestamp or value"
+
             store[key].append((timestamp, value))
             store[key].sort(key=lambda x: x[0])  # Ensure sorted order
             logger.info(f"TS.ADD {key} {timestamp} -> {value}")
@@ -53,20 +68,30 @@ class TimeSeries:
         with self.lock:
             if key not in store or not isinstance(store[key], list):
                 return []
-            start, end = int(start), int(end)
+
+            start, end = self._validate_timestamp(start), self._validate_timestamp(end)
+            if start is None or end is None:
+                return "ERR Invalid start or end timestamp"
+
             result = [(ts, val) for ts, val in store[key] if start <= ts <= end]
 
             if aggregation:
-                if aggregation.upper() == "SUM":
-                    aggregated = sum(val for _, val in result)
-                    logger.info(f"TS.RANGE {key} [{start}:{end}] SUM -> {aggregated}")
-                    return aggregated
-                elif aggregation.upper() == "AVG":
-                    aggregated = sum(val for _, val in result) / len(result) if result else 0
-                    logger.info(f"TS.RANGE {key} [{start}:{end}] AVG -> {aggregated}")
-                    return aggregated
-                else:
-                    return "ERR Unknown aggregation type"
+                return self._apply_aggregation(result, aggregation)
 
             logger.info(f"TS.RANGE {key} [{start}:{end}] -> {result}")
             return result
+
+    def _apply_aggregation(self, result, aggregation):
+        """
+        Apply an aggregation function to the result.
+        """
+        if aggregation.upper() == "SUM":
+            aggregated = sum(val for _, val in result)
+            logger.info(f"TS.RANGE AGGREGATION SUM -> {aggregated}")
+            return aggregated
+        elif aggregation.upper() == "AVG":
+            aggregated = sum(val for _, val in result) / len(result) if result else 0
+            logger.info(f"TS.RANGE AGGREGATION AVG -> {aggregated}")
+            return aggregated
+        else:
+            return "ERR Unknown aggregation type"

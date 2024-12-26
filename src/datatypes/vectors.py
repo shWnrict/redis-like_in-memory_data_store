@@ -9,13 +9,19 @@ class Vectors:
     def __init__(self):
         self.lock = threading.Lock()
 
+    def _validate_vector(self, vector):
+        if not isinstance(vector, list) or not all(isinstance(v, (int, float)) for v in vector):
+            return "ERR Vector must be a list of numbers"
+        return None
+
     def add_vector(self, store, key, vector):
         """
         Add or update a vector in the store.
         """
         with self.lock:
-            if not isinstance(vector, list):
-                return "ERR Vector must be a list of numbers"
+            error = self._validate_vector(vector)
+            if error:
+                return error
             if key in store and not isinstance(store[key], list):
                 return "ERR Key exists and is not a vector"
             store[key] = vector
@@ -27,8 +33,9 @@ class Vectors:
         Perform a similarity search and return the top-k nearest vectors.
         """
         with self.lock:
-            if not isinstance(query_vector, list):
-                return "ERR Query vector must be a list of numbers"
+            error = self._validate_vector(query_vector)
+            if error:
+                return error
 
             distances = []
             for key, vector in store.items():
@@ -44,7 +51,8 @@ class Vectors:
 
                 distances.append((key, dist))
 
-            distances.sort(key=lambda x: x[1], reverse=(metric == "cosine"))
+            reverse_sort = (metric == "cosine")
+            distances.sort(key=lambda x: x[1], reverse=reverse_sort)
             result = distances[:top_k]
             logger.info(f"SIMILARITY SEARCH -> {result}")
             return result
@@ -53,6 +61,13 @@ class Vectors:
         """
         Perform arithmetic operations on two vectors.
         """
+        error1 = self._validate_vector(vector1)
+        error2 = self._validate_vector(vector2)
+        if error1:
+            return error1
+        if error2:
+            return error2
+
         if len(vector1) != len(vector2):
             return "ERR Vectors must have the same length"
 

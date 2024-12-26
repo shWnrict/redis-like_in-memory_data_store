@@ -8,15 +8,21 @@ class Lists:
     def __init__(self):
         self.lock = threading.Lock()
 
+    def _validate_key_is_list(self, store, key):
+        if key not in store:
+            store[key] = []
+        if not isinstance(store[key], list):
+            return "ERR Key is not a list"
+        return None
+
     def lpush(self, store, key, *values):
         """
         Pushes values to the left of the list.
         """
         with self.lock:
-            if key not in store:
-                store[key] = []
-            if not isinstance(store[key], list):
-                return "ERR Key is not a list"
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
             store[key] = list(values) + store[key]
             logger.info(f"LPUSH {key} -> {store[key]}")
             return len(store[key])
@@ -26,10 +32,9 @@ class Lists:
         Pushes values to the right of the list.
         """
         with self.lock:
-            if key not in store:
-                store[key] = []
-            if not isinstance(store[key], list):
-                return "ERR Key is not a list"
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
             store[key].extend(values)
             logger.info(f"RPUSH {key} -> {store[key]}")
             return len(store[key])
@@ -39,7 +44,10 @@ class Lists:
         Removes and returns the first element of the list.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], list) or not store[key]:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            if not store[key]:
                 return "(nil)"
             value = store[key].pop(0)
             logger.info(f"LPOP {key} -> {value}")
@@ -50,7 +58,10 @@ class Lists:
         Removes and returns the last element of the list.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], list) or not store[key]:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            if not store[key]:
                 return "(nil)"
             value = store[key].pop()
             logger.info(f"RPOP {key} -> {value}")
@@ -61,7 +72,8 @@ class Lists:
         Returns a range of elements from the list.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], list):
+            error = self._validate_key_is_list(store, key)
+            if error:
                 return "(nil)"
             start, end = int(start), int(end)
             result = store[key][start:end + 1]
@@ -73,7 +85,8 @@ class Lists:
         Returns the element at the specified index in the list.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], list):
+            error = self._validate_key_is_list(store, key)
+            if error:
                 return "(nil)"
             index = int(index)
             if index < 0 or index >= len(store[key]):
@@ -87,11 +100,24 @@ class Lists:
         Sets the element at a specified index in the list.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], list):
-                return "ERR Key is not a list"
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
             index = int(index)
             if index < 0 or index >= len(store[key]):
                 return "ERR Index out of range"
             store[key][index] = value
             logger.info(f"LSET {key} [{index}] -> {value}")
             return "OK"
+
+    def llen(self, store, key):
+        """
+        Returns the length of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return 0
+            length = len(store[key])
+            logger.info(f"LLEN {key} -> {length}")
+            return length

@@ -5,12 +5,33 @@ class Bitfields:
     def __init__(self, data_store):
         self.data_store = data_store
 
+    def _validate_size(self, size):
+        if size < 1 or size > 64:
+            return "-ERR Invalid size (must be between 1 and 64)\r\n"
+        return None
+
+    def _validate_key(self, key):
+        if key not in self.data_store.store:
+            return "-ERR Key does not exist\r\n"
+        return None
+
+    def _extend_bitfield(self, bitfield, offset, size):
+        total_bits = len(bitfield) * 8
+        if offset + size > total_bits:
+            additional_bytes = math.ceil((offset + size - total_bits) / 8)
+            bitfield.extend(bytearray(additional_bytes))
+
     def get(self, key, offset, size):
         """
         Retrieve a value from the specified offset and size in the bitfield.
         """
-        if key not in self.data_store.store:
-            return ":0\r\n"  # Key doesn't exist
+        size_error = self._validate_size(size)
+        if size_error:
+            return size_error
+
+        key_error = self._validate_key(key)
+        if key_error:
+            return key_error
 
         bitfield = self.data_store.store[key]
         total_bits = len(bitfield) * 8
@@ -31,13 +52,15 @@ class Bitfields:
         """
         Set a value at the specified offset and size in the bitfield.
         """
+        size_error = self._validate_size(size)
+        if size_error:
+            return size_error
+
         if key not in self.data_store.store:
             self.data_store.store[key] = bytearray(math.ceil((offset + size) / 8))
 
         bitfield = self.data_store.store[key]
-        total_bits = len(bitfield) * 8
-        if offset + size > total_bits:
-            bitfield.extend(bytearray(math.ceil((offset + size - total_bits) / 8)))
+        self._extend_bitfield(bitfield, offset, size)
 
         byte_offset = offset // 8
         bit_offset = offset % 8
@@ -68,5 +91,4 @@ class Bitfields:
         if new_value < 0 or new_value >= (1 << size):
             return "-ERR Overflow\r\n"
 
-        self.set(key, offset, size, new_value)
-        return f":{new_value}\r\n"
+        return self.set(key, offset, size, new_value)

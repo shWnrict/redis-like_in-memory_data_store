@@ -9,6 +9,31 @@ class JSONType:
     def __init__(self):
         self.lock = threading.Lock()
 
+    def _validate_json(self, value):
+        """
+        Validate and parse JSON strings.
+        """
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+
+    def _navigate_to_path(self, store, key, path):
+        """
+        Helper method to navigate to the specified path in the JSON object.
+        """
+        if key not in store or not isinstance(store[key], dict):
+            return None, "ERR Key is not a JSON object"
+
+        current = store[key]
+        keys = path.split(".")
+        for k in keys[:-1]:
+            if k not in current or not isinstance(current[k], dict):
+                return None, "ERR Path not found or invalid"
+            current = current[k]
+
+        return current, None
+
     def json_set(self, store, key, path, value):
         """
         Sets a JSON value at the specified path.
@@ -19,19 +44,16 @@ class JSONType:
             if not isinstance(store[key], dict):
                 return "ERR Key is not a JSON object"
 
-            current = store[key]
-            keys = path.split(".")
-            for k in keys[:-1]:
-                if k not in current or not isinstance(current[k], dict):
-                    current[k] = {}
-                current = current[k]
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
 
             try:
                 value = json.loads(value)
             except json.JSONDecodeError:
                 pass  # Assume the value is a primitive
 
-            current[keys[-1]] = value
+            current[path.split(".")[-1]] = value
             logger.info(f"JSON.SET {key} {path} -> {value}")
             return "OK"
 
@@ -40,32 +62,30 @@ class JSONType:
         Retrieves a JSON value at the specified path.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], dict):
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key not in current:
                 return "(nil)"
-            current = store[key]
-            keys = path.split(".")
-            for k in keys:
-                if k not in current:
-                    return "(nil)"
-                current = current[k]
-            logger.info(f"JSON.GET {key} {path} -> {current}")
-            return json.dumps(current)
+
+            value = current[target_key]
+            logger.info(f"JSON.GET {key} {path} -> {value}")
+            return json.dumps(value)
 
     def json_del(self, store, key, path):
         """
         Deletes a JSON value at the specified path.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], dict):
-                return 0
-            current = store[key]
-            keys = path.split(".")
-            for k in keys[:-1]:
-                if k not in current:
-                    return 0
-                current = current[k]
-            if keys[-1] in current:
-                del current[keys[-1]]
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key in current:
+                del current[target_key]
                 logger.info(f"JSON.DEL {key} {path}")
                 return 1
             return 0
@@ -75,16 +95,19 @@ class JSONType:
         Appends values to an array at the specified path.
         """
         with self.lock:
-            if key not in store or not isinstance(store[key], dict):
-                return "ERR Key is not a JSON object"
-            current = store[key]
-            keys = path.split(".")
-            for k in keys[:-1]:
-                if k not in current or not isinstance(current[k], dict):
-                    return "ERR Path not found or invalid"
-                current = current[k]
-            if keys[-1] not in current or not isinstance(current[keys[-1]], list):
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key not in current or not isinstance(current[target_key], list):
                 return "ERR Path does not point to an array"
-            current[keys[-1]].extend(values)
-            logger.info(f"JSON.ARRAPPEND {key} {path} -> {values}")
-            return len(current[keys[-1]])
+
+            try:
+                parsed_values = [json.loads(v) for v in values]
+            except json.JSONDecodeError:
+                return "ERR Values must be JSON serializable"
+
+            current[target_key].extend(parsed_values)
+            logger.info(f"JSON.ARRAPPEND {key} {path} -> {parsed_values}")
+            return len(current[target_key])
