@@ -52,11 +52,20 @@ class ExpiryManager:
         """
         while True:
             try:
+                # Instead of scanning all keys, track earliest expiry
+                with self.lock:
+                    if not self.expiry:
+                        time.sleep(self.cleanup_interval)
+                        continue
+                    earliest_expiry = min(self.expiry.values())
                 now = time.time()
+                sleep_time = earliest_expiry - now
+                if sleep_time > 0:
+                    time.sleep(min(sleep_time, self.cleanup_interval))
+
                 with self.lock:
                     keys_to_remove = [key for key, expiry in self.expiry.items() if now > expiry]
                 for key in keys_to_remove:
                     self.remove_expired_key(key)
-                time.sleep(self.cleanup_interval)
             except Exception as e:
                 logger.error(f"Error in cleanup thread: {e}")

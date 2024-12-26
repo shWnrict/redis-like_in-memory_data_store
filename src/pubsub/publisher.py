@@ -8,6 +8,7 @@ class PubSub:
     def __init__(self):
         self.lock = threading.Lock()
         self.channels = {}
+        self.patterns = {}
 
     def subscribe(self, client_id, channel):
         """
@@ -19,6 +20,17 @@ class PubSub:
             self.channels[channel].add(client_id)
             logger.info(f"SUBSCRIBE: Client {client_id} subscribed to channel {channel}")
             return f"Subscribed to {channel}"
+
+    def psubscribe(self, client_id, pattern):
+        """
+        Subscribe a client to a pattern.
+        """
+        with self.lock:
+            if pattern not in self.patterns:
+                self.patterns[pattern] = set()
+            self.patterns[pattern].add(client_id)
+            logger.info(f"PSUBSCRIBE: Client {client_id} subscribed to pattern {pattern}")
+            return f"psubscribed to {pattern}"
 
     def unsubscribe(self, client_id, channel=None):
         """
@@ -55,7 +67,21 @@ class PubSub:
             for client_id in subscribers:
                 self.__send_message(client_id, channel, message)
             logger.info(f"PUBLISH: Sent message to {len(subscribers)} subscribers on {channel}")
-            return len(subscribers)
+            
+            # Match patterns
+            total_subscribers = len(subscribers)
+            for pattern, subs in self.patterns.items():
+                if self._matches(pattern, channel):
+                    for client_id in subs:
+                        self.__send_message(client_id, channel, message)
+                    total_subscribers += len(subs)
+            return total_subscribers
+
+    def _matches(self, pattern, channel):
+        """
+        Simple wildcard matching, adapt as needed.
+        """
+        return True if pattern in channel else False
 
     def __send_message(self, client_id, channel, message):
         """

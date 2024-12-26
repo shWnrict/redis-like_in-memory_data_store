@@ -45,18 +45,32 @@ class Server:
         self.max_clients = max_clients
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setblocking(False)  # Enable non-blocking mode
-        self.data_store = DataStore()
-        self.command_router = CommandRouter(self)
-
-        self.memory_manager = MemoryManager()
-        self.expiry_manager = ExpiryManager(self.data_store)
-        self.transaction_manager = TransactionManager()
-        self.pubsub = PubSub()
 
         self.aof = AOF()
         self.snapshot = Snapshot()
-        self.changes_since_snapshot = 0
-        self.snapshot_threshold = Config.SNAPSHOT_THRESHOLD
+        self.data_store = DataStore()
+
+        # Make sure to define transaction_manager before replay
+        self.transaction_manager = TransactionManager()
+
+        try:
+            snapshot_data = self.snapshot.load()
+            if snapshot_data and isinstance(snapshot_data, dict):
+                self.data_store.store = snapshot_data
+        except Exception as e:
+            logger.error(f"Error loading snapshot: {e}")
+            self.data_store.store = {}  # Start with empty store if loading fails
+
+        # Safely replay AOF
+        try:
+            self.aof.replay(self.process_command, self.data_store.store)
+        except Exception as e:
+            logger.error(f"Error replaying AOF: {e}")
+
+        self.command_router = CommandRouter(self)
+        self.memory_manager = MemoryManager()
+        self.expiry_manager = ExpiryManager(self.data_store)
+        self.pubsub = PubSub()
 
         self.strings = Strings()
         self.lists = Lists()
@@ -108,8 +122,9 @@ class Server:
         self.snapshot.save(self.data_store.store)
         self.server_socket.close()
         logger.info("Server stopped")
-
     def handle_client(self, client_socket):
+        client_id = id(threading.current_thread())  # Generate unique client ID
+        
         with self.clients_lock:
             self.clients.add(client_socket)
 
@@ -125,9 +140,10 @@ class Server:
                     if b"\r\n" not in buffer:
                         continue
 
-                    commands = RESPProtocol.parse_message(buffer.decode())
-                    responses = [self.process_command(command) for command in commands]
-                    client_socket.send(RESPProtocol.format_response(responses).encode())
+                    command_lists = RESPProtocol.parse_message(buffer.decode())
+                    response = self.process_command(command_lists[0], client_id)  # Pass client_id
+                    formatted_response = RESPProtocol.format_response(response)
+                    client_socket.send(formatted_response.encode())
                     buffer = b""
 
                 except BlockingIOError:
@@ -138,11 +154,14 @@ class Server:
             with self.clients_lock:
                 self.clients.remove(client_socket)
             client_socket.close()
-
+            
     def process_command(self, command, client_id=None):
         try:
-            cmd, *args = command.split()
-            cmd = cmd.upper()
+            if not command:  # Check if command is empty
+                return "ERR Empty command"
+                
+            cmd = command[0].upper()  # First element is the command
+            args = command[1:]        # Remaining elements are arguments
 
             handlers = [
                 self.handle_pubsub,
@@ -170,18 +189,26 @@ class Server:
         elif cmd == "PUBLISH":
             return str(self.pubsub.publish(args[0], args[1]))
         return None
-
+    
     def handle_transactions(self, cmd, args, client_id):
+        """Handle transaction-related commands"""
+        if not client_id:
+            client_id = id(threading.current_thread())  # Use thread ID as client ID if none provided
+            
         if cmd == "MULTI":
             return self.transaction_manager.start_transaction(client_id)
         elif cmd == "EXEC":
             return self.transaction_manager.execute_transaction(
-                client_id, self.data_store.store, self.process_command
+                client_id,
+                self.data_store.store,
+                lambda cmd, _: self.process_command(cmd, client_id)
             )
         elif cmd == "DISCARD":
             return self.transaction_manager.discard_transaction(client_id)
         elif client_id in self.transaction_manager.transactions:
-            return self.transaction_manager.queue_command(client_id, cmd + " " + " ".join(args))
+            full_cmd = f"{cmd} {' '.join(args)}" if args else cmd
+            return self.transaction_manager.queue_command(client_id, full_cmd)
+        
         return None
 
     def handle_persistence(self, cmd, args, client_id):
@@ -205,46 +232,49 @@ class Server:
     def handle_general_commands(self, cmd, args, client_id):
         if cmd == "SET":
             if len(args) < 2:
-                return "-ERR wrong number of arguments for 'SET'\r\n"
-            key, value = args
+                return "-ERR wrong number of arguments for 'SET' command"
+            key, value = args[0], args[1]
             if not self.memory_manager.can_store(value):
-                return "-ERR Not enough memory\r\n"
+                return "-ERR Not enough memory"
             self.memory_manager.add(value)
             self.data_store.store[key] = value
-            return "+OK\r\n"
+            return "OK"
 
         elif cmd == "GET":
             if len(args) < 1:
-                return "-ERR wrong number of arguments for 'GET'\r\n"
+                return "-ERR wrong number of arguments for 'GET' command"
             key = args[0]
             if self.expiry_manager.is_expired(key):
-                return "$-1\r\n"
+                return None
             value = self.data_store.store.get(key, None)
             if value is None:
-                return "$-1\r\n"
-            return f"${len(value)}\r\n{value}\r\n"
+                return None
+            return value
 
         elif cmd == "DEL":
+            if not args:
+                return "-ERR wrong number of arguments for 'DEL' command"
             key = args[0]
             self.memory_manager.remove(self.data_store.store.get(key, None))
             removed = self.data_store.store.pop(key, None) is not None
-            return f":{1 if removed else 0}\r\n"
+            return 1 if removed else 0
 
         elif cmd == "EXISTS":
             key = args[0]
-            return f":{1 if key in self.data_store.store else 0}\r\n"
+            return 1 if key in self.data_store.store else 0
 
         elif cmd == "EXPIRE":
             if len(args) < 2:
-                return "-ERR wrong number of arguments for 'EXPIRE'\r\n"
+                return "-ERR wrong number of arguments for 'EXPIRE' command"
             key, ttl = args
             ttl = int(ttl)
             if key in self.data_store.store:
                 self.expiry_manager.set_expiry(key, ttl)
-                return ":1\r\n"
-            return ":0\r\n"
+                return 1
+            return 0
 
         return None
+
 
     def handle_data_type_commands(self, cmd, args, client_id):
         data_type_handlers = {
@@ -263,6 +293,10 @@ class Server:
             "VECTORS": self.vectors,
             "DOCUMENTS": self.documents
         }
+
+        # Ensure the command is routed to the correct handler
+        if cmd in {"SET", "GET", "DEL", "EXISTS", "EXPIRE"}:
+            return self.handle_general_commands(cmd, args, client_id)
 
         for data_type, handler in data_type_handlers.items():
             if hasattr(handler, cmd.lower()):

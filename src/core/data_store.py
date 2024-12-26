@@ -27,12 +27,22 @@ class DataStore:
         """
         Set a key-value pair with an optional TTL (in seconds).
         """
+        # Basic memory guard (placeholder)
+        if self._exceeds_memory_threshold():
+            return "-ERR Not enough memory"
+
         with self.lock:
             self.store[key] = value
             if ttl:
                 self.expiry[key] = time.time() + ttl
             logger.info(f"SET {key} -> {value} (TTL={ttl})")
             return "OK"
+
+    def _exceeds_memory_threshold(self):
+        # Dummy example check
+        MAX_MEMORY = 1024 * 1024  # 1 MB for illustration
+        current_usage = sum(len(str(v)) for v in self.store.values())
+        return current_usage > MAX_MEMORY
 
     def get(self, key):
         """
