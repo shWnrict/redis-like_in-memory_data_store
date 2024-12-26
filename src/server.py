@@ -36,63 +36,89 @@ logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
     def __init__(self, host=Config.HOST, port=Config.PORT, max_clients=Config.MAX_CLIENTS):
+        # Initialize basic server components
         self.running = False
         self.clients = set()
         self.clients_lock = threading.Lock()
-
         self.host = host
         self.port = port
         self.max_clients = max_clients
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setblocking(False)  # Enable non-blocking mode
+        self.server_socket.setblocking(False)
 
-        self.aof = AOF()
-        self.snapshot = Snapshot()
+        # Initialize data store and managers
         self.data_store = DataStore()
-
-        # Make sure to define transaction_manager before replay
-        self.transaction_manager = TransactionManager()
-
-        try:
-            snapshot_data = self.snapshot.load()
-            if snapshot_data and isinstance(snapshot_data, dict):
-                self.data_store.store = snapshot_data
-        except Exception as e:
-            logger.error(f"Error loading snapshot: {e}")
-            self.data_store.store = {}  # Start with empty store if loading fails
-
-        # Safely replay AOF
-        try:
-            self.aof.replay(self.process_command, self.data_store.store)
-        except Exception as e:
-            logger.error(f"Error replaying AOF: {e}")
-
-        self.command_router = CommandRouter(self)
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
-        self.pubsub = PubSub()
-
-        self.strings = Strings()
+        
+        # Initialize data type handlers
+        self.strings = Strings(self.expiry_manager)
         self.lists = Lists()
         self.sets = Sets()
         self.hashes = Hashes()
         self.sorted_sets = SortedSets()
-
         self.streams = Streams()
         self.json_type = JSONType()
         self.bitmaps = Bitmaps()
         self.bitfields = Bitfields(self.data_store)
-
         self.geospatial = Geospatial()
         self.hyperloglogs = {}
         self.timeseries = TimeSeries()
-
         self.vectors = Vectors()
         self.documents = Documents()
 
-        # Initialize state from persistence mechanisms
-        self.data_store.store = self.snapshot.load()
-        self.aof.replay(self.process_command, self.data_store.store)
+        # Initialize persistence and transaction components
+        self.aof = AOF()
+        self.snapshot = Snapshot()
+        self.transaction_manager = TransactionManager()
+        self.pubsub = PubSub()
+        self.command_router = CommandRouter(self)
+        
+        # Initialize persistence state
+        self.changes_since_snapshot = 0
+        self.snapshot_threshold = Config.SNAPSHOT_THRESHOLD
+
+        # Load data from persistence (only once)
+        self._load_persistence_data()
+
+    def _load_persistence_data(self):
+        """Load data from snapshot and AOF files"""
+        try:
+            # First load snapshot
+            snapshot_data = self.snapshot.load()
+            if snapshot_data and isinstance(snapshot_data, dict):
+                self.data_store.store = snapshot_data
+            else:
+                self.data_store.store = {}
+        except Exception as e:
+            logger.error(f"Error loading snapshot: {e}")
+            self.data_store.store = {}
+
+        # Then replay AOF
+        try:
+            self.aof.replay(self._replay_command, self.data_store.store)
+        except Exception as e:
+            logger.error(f"Error replaying AOF: {e}")
+
+    def _replay_command(self, command):
+        """Special handler for replaying commands from AOF"""
+        try:
+            if isinstance(command, str):
+                parts = command.split()
+                cmd = parts[0].upper()
+                args = parts[1:]
+            else:
+                cmd = command[0].upper()
+                args = command[1:]
+
+            # Handle string commands directly during replay
+            if cmd in {"SET", "GET", "DEL", "EXISTS", "EXPIRE"}:
+                return self.strings.handle_command(cmd, self.data_store.store, *args)
+            
+            return self.process_command([cmd] + args)
+        except Exception as e:
+            logger.error(f"Error replaying command {command}: {e}")
+            return None
 
     def __del__(self):
         self.stop()
@@ -157,11 +183,24 @@ class Server:
             
     def process_command(self, command, client_id=None):
         try:
-            if not command:  # Check if command is empty
+            if not command:
                 return "ERR Empty command"
-                
-            cmd = command[0].upper()  # First element is the command
-            args = command[1:]        # Remaining elements are arguments
+
+            if isinstance(command, str):
+                # Handle string commands from AOF replay
+                parts = command.split()
+                cmd = parts[0].upper()
+                args = parts[1:]
+            else:
+                # Join split commands (e.g., "S", "ET" -> "SET")
+                if len(command) >= 2 and command[0] + command[1] in {"SET", "DEL", "GET"}:
+                    cmd = command[0] + command[1]
+                    args = command[2:]
+                else:
+                    cmd = command[0].upper()
+                    args = command[1:]
+
+            logger.info(f"Processing command: {cmd} with args: {args} from client: {client_id}")
 
             handlers = [
                 self.handle_pubsub,
@@ -176,6 +215,7 @@ class Server:
                 if result is not None:
                     return result
 
+            logger.error(f"Unknown command: {cmd}")
             return "ERR Unknown command"
         except Exception as e:
             logger.error(f"Command processing error: {e}")
@@ -230,51 +270,12 @@ class Server:
         return None
 
     def handle_general_commands(self, cmd, args, client_id):
-        if cmd == "SET":
-            if len(args) < 2:
-                return "-ERR wrong number of arguments for 'SET' command"
-            key, value = args[0], args[1]
-            if not self.memory_manager.can_store(value):
-                return "-ERR Not enough memory"
-            self.memory_manager.add(value)
-            self.data_store.store[key] = value
+        if cmd == "SAVE":
+            return self.snapshot.save(self.data_store.store)
+        elif cmd == "RESTORE":
+            self.data_store.store = self.snapshot.load()
             return "OK"
-
-        elif cmd == "GET":
-            if len(args) < 1:
-                return "-ERR wrong number of arguments for 'GET' command"
-            key = args[0]
-            if self.expiry_manager.is_expired(key):
-                return None
-            value = self.data_store.store.get(key, None)
-            if value is None:
-                return None
-            return value
-
-        elif cmd == "DEL":
-            if not args:
-                return "-ERR wrong number of arguments for 'DEL' command"
-            key = args[0]
-            self.memory_manager.remove(self.data_store.store.get(key, None))
-            removed = self.data_store.store.pop(key, None) is not None
-            return 1 if removed else 0
-
-        elif cmd == "EXISTS":
-            key = args[0]
-            return 1 if key in self.data_store.store else 0
-
-        elif cmd == "EXPIRE":
-            if len(args) < 2:
-                return "-ERR wrong number of arguments for 'EXPIRE' command"
-            key, ttl = args
-            ttl = int(ttl)
-            if key in self.data_store.store:
-                self.expiry_manager.set_expiry(key, ttl)
-                return 1
-            return 0
-
         return None
-
 
     def handle_data_type_commands(self, cmd, args, client_id):
         data_type_handlers = {
@@ -294,9 +295,8 @@ class Server:
             "DOCUMENTS": self.documents
         }
 
-        # Ensure the command is routed to the correct handler
         if cmd in {"SET", "GET", "DEL", "EXISTS", "EXPIRE"}:
-            return self.handle_general_commands(cmd, args, client_id)
+            return self.strings.handle_command(cmd, self.data_store.store, *args)
 
         for data_type, handler in data_type_handlers.items():
             if hasattr(handler, cmd.lower()):

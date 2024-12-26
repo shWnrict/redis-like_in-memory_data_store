@@ -1,0 +1,1596 @@
+# src/datatypes/bitfields.py
+import math
+
+class Bitfields:
+    def __init__(self, data_store):
+        self.data_store = data_store
+
+    def _validate_size(self, size):
+        if size < 1 or size > 64:
+            return "-ERR Invalid size (must be between 1 and 64)\r\n"
+        return None
+
+    def _validate_key(self, key):
+        if key not in self.data_store.store:
+            return "-ERR Key does not exist\r\n"
+        return None
+
+    def _extend_bitfield(self, bitfield, offset, size):
+        total_bits = len(bitfield) * 8
+        if offset + size > total_bits:
+            additional_bytes = math.ceil((offset + size - total_bits) / 8)
+            bitfield.extend(bytearray(additional_bytes))
+
+    def get(self, key, offset, size):
+        """
+        Retrieve a value from the specified offset and size in the bitfield.
+        """
+        size_error = self._validate_size(size)
+        if size_error:
+            return size_error
+
+        key_error = self._validate_key(key)
+        if key_error:
+            return key_error
+
+        bitfield = self.data_store.store[key]
+        total_bits = len(bitfield) * 8
+        if offset + size > total_bits:
+            return "-ERR Out of range\r\n"
+
+        byte_offset = offset // 8
+        bit_offset = offset % 8
+        mask = (1 << size) - 1
+
+        try:
+            value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
+            value >>= (8 - ((bit_offset + size) % 8)) % 8
+            value &= mask
+        except Exception as e:
+            return f"-ERR {str(e)}\r\n"
+
+        return f":{value}\r\n"
+
+    def set(self, key, offset, size, value):
+        """
+        Set a value at the specified offset and size in the bitfield.
+        """
+        size_error = self._validate_size(size)
+        if size_error:
+            return size_error
+
+        if key not in self.data_store.store:
+            self.data_store.store[key] = bytearray(math.ceil((offset + size) / 8))
+
+        bitfield = self.data_store.store[key]
+        self._extend_bitfield(bitfield, offset, size)
+
+        byte_offset = offset // 8
+        bit_offset = offset % 8
+        mask = (1 << size) - 1
+
+        value &= mask
+        value <<= (8 - ((bit_offset + size) % 8)) % 8
+
+        try:
+            current_value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
+            current_value &= ~(mask << ((8 - ((bit_offset + size) % 8)) % 8))
+            current_value |= value
+
+            new_bytes = current_value.to_bytes(math.ceil((bit_offset + size) / 8), 'big')
+            bitfield[byte_offset:byte_offset + len(new_bytes)] = new_bytes
+        except Exception as e:
+            return f"-ERR {str(e)}\r\n"
+
+        return f":{value >> ((8 - ((bit_offset + size) % 8)) % 8)}\r\n"
+
+    def incrby(self, key, offset, size, delta):
+        """
+        Increment a value at the specified offset and size in the bitfield.
+        """
+        current_value = self.get(key, offset, size)
+        if current_value.startswith("-ERR"):
+            return current_value
+
+        current_value = int(current_value[1:].strip())
+        new_value = current_value + delta
+        if new_value < 0 or new_value >= (1 << size):
+            return "-ERR Overflow\r\n"
+
+        return self.set(key, offset, size, new_value)
+
+# src/datatypes/bitmaps.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("bitmaps")
+
+class Bitmaps:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def setbit(self, store, key, offset, value):
+        """
+        Sets or clears the bit at the specified offset in a string.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = "\x00"
+            if not isinstance(store[key], str):
+                return "ERR Key is not a string"
+
+            try:
+                offset = int(offset)
+                value = int(value)
+            except ValueError:
+                return "ERR offset or value is not an integer"
+
+            byte_index = offset // 8
+            bit_index = offset % 8
+            while len(store[key]) <= byte_index:
+                store[key] += "\x00"  # Extend the string with null bytes
+
+            current_byte = ord(store[key][byte_index])
+            if value == 1:
+                new_byte = current_byte | (1 << (7 - bit_index))
+            else:
+                new_byte = current_byte & ~(1 << (7 - bit_index))
+
+            store[key] = store[key][:byte_index] + chr(new_byte) + store[key][byte_index + 1:]
+            logger.info(f"SETBIT {key} {offset} {value}")
+            return 1 if (current_byte & (1 << (7 - bit_index))) else 0
+
+    def getbit(self, store, key, offset):
+        """
+        Gets the bit value at the specified offset in a string.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], str):
+                return 0
+
+            try:
+                offset = int(offset)
+            except ValueError:
+                return "ERR offset is not an integer"
+
+            byte_index = offset // 8
+            bit_index = offset % 8
+            if byte_index >= len(store[key]):
+                return 0
+
+            byte = ord(store[key][byte_index])
+            bit = (byte >> (7 - bit_index)) & 1
+            logger.info(f"GETBIT {key} {offset} -> {bit}")
+            return bit
+
+    def bitcount(self, store, key, start=None, end=None):
+        """
+        Counts the number of set bits (1s) in the string.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], str):
+                return 0
+
+            try:
+                start = int(start) if start is not None else 0
+                end = int(end) if end is not None else len(store[key]) - 1
+            except ValueError:
+                return "ERR start or end is not an integer"
+
+            count = 0
+            for byte in store[key][start:end + 1]:
+                count += bin(ord(byte)).count("1")
+            logger.info(f"BITCOUNT {key} [{start}:{end}] -> {count}")
+            return count
+
+    def bitop(self, store, operation, destkey, *sourcekeys):
+        """
+        Performs bitwise operations (AND, OR, XOR, NOT) on strings.
+        """
+        with self.lock:
+            if operation.upper() not in {"AND", "OR", "XOR", "NOT"}:
+                return "ERR Unknown operation"
+
+            if operation.upper() == "NOT" and len(sourcekeys) != 1:
+                return "ERR NOT operation requires exactly one source key"
+
+            max_length = 0
+            source_data = []
+            for key in sourcekeys:
+                if key in store and isinstance(store[key], str):
+                    source_data.append(store[key])
+                    max_length = max(max_length, len(store[key]))
+                else:
+                    source_data.append("\x00" * max_length)
+
+            result = ["\x00"] * max_length
+            if operation.upper() == "NOT":
+                source = source_data[0]
+                result = [chr(~ord(c) & 0xFF) for c in source]
+            else:
+                for i in range(max_length):
+                    if operation.upper() == "AND":
+                        byte = ord(source_data[0][i]) if i < len(source_data[0]) else 0x00
+                        for src in source_data[1:]:
+                            byte &= ord(src[i]) if i < len(src) else 0x00
+                    elif operation.upper() == "OR":
+                        byte = 0x00
+                        for src in source_data:
+                            byte |= ord(src[i]) if i < len(src) else 0x00
+                    elif operation.upper() == "XOR":
+                        byte = 0x00
+                        for src in source_data:
+                            byte ^= ord(src[i]) if i < len(src) else 0x00
+                    result[i] = chr(byte)
+
+            store[destkey] = "".join(result)
+            logger.info(f"BITOP {operation} {destkey} -> Success")
+            return len(store[destkey])
+
+# src/datatypes/documents.py
+from src.logger import setup_logger
+import threading
+import json
+
+logger = setup_logger("documents")
+
+class Documents:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def _validate_json(self, json_string):
+        try:
+            return json.loads(json_string)
+        except json.JSONDecodeError:
+            return None
+
+    def insert(self, store, key, document):
+        """
+        Insert a document into the database.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = []
+            if not isinstance(store[key], list):
+                return "ERR Key is not a document collection"
+
+            document_data = self._validate_json(document)
+            if document_data is None:
+                return "ERR Invalid JSON document"
+
+            store[key].append(document_data)
+            logger.info(f"INSERT {key} -> {document_data}")
+            return "OK"
+
+    def find(self, store, key, query):
+        """
+        Find documents in a collection that match the query.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return "ERR Collection does not exist"
+
+            query_data = self._validate_json(query)
+            if query_data is None:
+                return "ERR Invalid JSON query"
+
+            result = [doc for doc in store[key] if self._matches_query(doc, query_data)]
+            logger.info(f"FIND {key} -> {result}")
+            return result
+
+    def update(self, store, key, query, update_fields):
+        """
+        Update documents in a collection based on a query.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return "ERR Collection does not exist"
+
+            query_data = self._validate_json(query)
+            update_data = self._validate_json(update_fields)
+
+            if query_data is None or update_data is None:
+                return "ERR Invalid JSON"
+
+            updated_count = 0
+            for doc in store[key]:
+                if self._matches_query(doc, query_data):
+                    doc.update(update_data)
+                    updated_count += 1
+
+            logger.info(f"UPDATE {key} -> {updated_count} documents updated")
+            return updated_count
+
+    def delete(self, store, key, query):
+        """
+        Delete documents in a collection that match the query.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return "ERR Collection does not exist"
+
+            query_data = self._validate_json(query)
+            if query_data is None:
+                return "ERR Invalid JSON query"
+
+            initial_count = len(store[key])
+            store[key] = [doc for doc in store[key] if not self._matches_query(doc, query_data)]
+            deleted_count = initial_count - len(store[key])
+
+            logger.info(f"DELETE {key} -> {deleted_count} documents deleted")
+            return deleted_count
+
+    def aggregate(self, store, key, operation, field):
+        """
+        Perform an aggregation operation on a specific field.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return "ERR Collection does not exist"
+
+            if operation.lower() == "count":
+                result = len(store[key])
+            elif operation.lower() == "sum":
+                result = sum(doc.get(field, 0) for doc in store[key] if isinstance(doc.get(field), (int, float)))
+            elif operation.lower() == "avg":
+                valid_values = [doc.get(field, 0) for doc in store[key] if isinstance(doc.get(field), (int, float))]
+                result = sum(valid_values) / len(valid_values) if valid_values else 0
+            else:
+                return "ERR Unknown operation"
+
+            logger.info(f"AGGREGATE {key} {operation.upper()} {field} -> {result}")
+            return result
+
+    def _matches_query(self, document, query):
+        """
+        Helper method to match a document against a query.
+        """
+        for key, value in query.items():
+            if key not in document or document[key] != value:
+                return False
+        return True
+
+# src/datatypes/geospatial.py
+from src.logger import setup_logger
+import threading
+import math
+
+logger = setup_logger("geospatial")
+
+class Geospatial:
+    EARTH_RADIUS_KM = 6371  # Radius of the Earth in kilometers
+
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def __calculate_distance(self, lat1, lon1, lat2, lon2):
+        """
+        Calculate the Haversine distance between two points.
+        """
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return self.EARTH_RADIUS_KM * c
+
+    def _validate_unit(self, unit):
+        """
+        Validate the distance unit.
+        """
+        if unit not in {"m", "km", "mi"}:
+            return "ERR Unknown unit"
+        return None
+
+    def geoadd(self, store, key, *args):
+        """
+        Add geospatial data to the store.
+        GEOADD key lon lat member
+        """
+        if len(args) % 3 != 0:
+            return "ERR Invalid number of arguments"
+        with self.lock:
+            if key not in store:
+                store[key] = {}
+            if not isinstance(store[key], dict):
+                return "ERR Key is not a geospatial index"
+
+            count = 0
+            for i in range(0, len(args), 3):
+                try:
+                    lon, lat = float(args[i]), float(args[i + 1])
+                    member = args[i + 2]
+                    store[key][member] = (lat, lon)
+                    count += 1
+                except ValueError:
+                    return "ERR Invalid longitude or latitude"
+
+            logger.info(f"GEOADD {key} -> {count} locations added")
+            return count
+
+    def geodist(self, store, key, member1, member2, unit="m"):
+        """
+        Calculate the distance between two members.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return "ERR Key is not a geospatial index"
+
+            loc1 = store[key].get(member1)
+            loc2 = store[key].get(member2)
+            if not loc1 or not loc2:
+                return "(nil)"
+
+            distance_km = self.__calculate_distance(loc1[0], loc1[1], loc2[0], loc2[1])
+
+            unit_error = self._validate_unit(unit)
+            if unit_error:
+                return unit_error
+
+            if unit == "m":
+                return distance_km * 1000
+            elif unit == "km":
+                return distance_km
+            elif unit == "mi":
+                return distance_km * 0.621371
+
+    def geosearch(self, store, key, lat, lon, radius, unit="km"):
+        """
+        Search for locations within a radius of the given coordinates.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return []
+
+            radius_km = radius if unit == "km" else radius / 1000 if unit == "m" else radius * 1.60934 if unit == "mi" else 0
+
+            unit_error = self._validate_unit(unit)
+            if unit_error:
+                return unit_error
+
+            result = []
+            for member, (lat2, lon2) in store[key].items():
+                distance_km = self.__calculate_distance(lat, lon, lat2, lon2)
+                if distance_km <= radius_km:
+                    result.append((member, distance_km))
+
+            logger.info(f"GEOSEARCH {key} -> Found {len(result)} locations")
+            return result
+
+# src/datatypes/hashes.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("hashes")
+
+class Hashes:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def hset(self, store, key, field, value):
+        """
+        Sets a field in the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = {}
+            if not isinstance(store[key], dict):
+                return "ERR Key is not a hash"
+            new_field = field not in store[key]
+            store[key][field] = value
+            logger.info(f"HSET {key} {field} -> {value}")
+            return 1 if new_field else 0
+
+    def hmset(self, store, key, field_value_pairs):
+        """
+        Sets multiple fields in the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = {}
+            if not isinstance(store[key], dict):
+                return "ERR Key is not a hash"
+            for field, value in field_value_pairs.items():
+                store[key][field] = value
+            logger.info(f"HMSET {key} -> {field_value_pairs}")
+            return "OK"
+
+    def hget(self, store, key, field):
+        """
+        Gets the value of a field in the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return "(nil)"
+            value = store[key].get(field)
+            logger.info(f"HGET {key} {field} -> {value}")
+            return value if value is not None else "(nil)"
+
+    def hgetall(self, store, key):
+        """
+        Gets all fields and values of the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return "(nil)"
+            items = list(store[key].items())
+            logger.info(f"HGETALL {key} -> {items}")
+            return items
+
+    def hdel(self, store, key, *fields):
+        """
+        Deletes one or more fields from the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return 0
+            deleted = 0
+            for field in fields:
+                if field in store[key]:
+                    del store[key][field]
+                    deleted += 1
+            logger.info(f"HDEL {key} -> {deleted} fields deleted")
+            return deleted
+
+    def hexists(self, store, key, field):
+        """
+        Checks if a field exists in the hash stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return 0
+            exists = 1 if field in store[key] else 0
+            logger.info(f"HEXISTS {key} {field} -> {exists}")
+            return exists
+
+# src/datatypes/json_type.py
+from src.logger import setup_logger
+import threading
+import json
+
+logger = setup_logger("json")
+
+class JSONType:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def _validate_json(self, value):
+        """
+        Validate and parse JSON strings.
+        """
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+
+    def _navigate_to_path(self, store, key, path):
+        """
+        Helper method to navigate to the specified path in the JSON object.
+        """
+        if key not in store or not isinstance(store[key], dict):
+            return None, "ERR Key is not a JSON object"
+
+        current = store[key]
+        keys = path.split(".")
+        for k in keys[:-1]:
+            if k not in current or not isinstance(current[k], dict):
+                return None, "ERR Path not found or invalid"
+            current = current[k]
+
+        return current, None
+
+    def json_set(self, store, key, path, value):
+        """
+        Sets a JSON value at the specified path.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = {}
+            if not isinstance(store[key], dict):
+                return "ERR Key is not a JSON object"
+
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                pass  # Assume the value is a primitive
+
+            current[path.split(".")[-1]] = value
+            logger.info(f"JSON.SET {key} {path} -> {value}")
+            return "OK"
+
+    def json_get(self, store, key, path):
+        """
+        Retrieves a JSON value at the specified path.
+        """
+        with self.lock:
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key not in current:
+                return "(nil)"
+
+            value = current[target_key]
+            logger.info(f"JSON.GET {key} {path} -> {value}")
+            return json.dumps(value)
+
+    def json_del(self, store, key, path):
+        """
+        Deletes a JSON value at the specified path.
+        """
+        with self.lock:
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key in current:
+                del current[target_key]
+                logger.info(f"JSON.DEL {key} {path}")
+                return 1
+            return 0
+
+    def json_arrappend(self, store, key, path, *values):
+        """
+        Appends values to an array at the specified path.
+        """
+        with self.lock:
+            current, error = self._navigate_to_path(store, key, path)
+            if error:
+                return error
+
+            target_key = path.split(".")[-1]
+            if target_key not in current or not isinstance(current[target_key], list):
+                return "ERR Path does not point to an array"
+
+            try:
+                parsed_values = [json.loads(v) for v in values]
+            except json.JSONDecodeError:
+                return "ERR Values must be JSON serializable"
+
+            current[target_key].extend(parsed_values)
+            logger.info(f"JSON.ARRAPPEND {key} {path} -> {parsed_values}")
+            return len(current[target_key])
+
+# src/datatypes/lists.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("lists")
+
+class Lists:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def _validate_key_is_list(self, store, key):
+        if key not in store:
+            store[key] = []
+        if not isinstance(store[key], list):
+            return "ERR Key is not a list"
+        return None
+
+    def lpush(self, store, key, *values):
+        """
+        Pushes values to the left of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
+            store[key] = list(values) + store[key]
+            logger.info(f"LPUSH {key} -> {store[key]}")
+            return len(store[key])
+
+    def rpush(self, store, key, *values):
+        """
+        Pushes values to the right of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
+            store[key].extend(values)
+            logger.info(f"RPUSH {key} -> {store[key]}")
+            return len(store[key])
+
+    def lpop(self, store, key):
+        """
+        Removes and returns the first element of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            if not store[key]:
+                return "(nil)"
+            value = store[key].pop(0)
+            logger.info(f"LPOP {key} -> {value}")
+            return value
+
+    def rpop(self, store, key):
+        """
+        Removes and returns the last element of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            if not store[key]:
+                return "(nil)"
+            value = store[key].pop()
+            logger.info(f"RPOP {key} -> {value}")
+            return value
+
+    def lrange(self, store, key, start, end):
+        """
+        Returns a range of elements from the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            try:
+                start, end = int(start), int(end)
+            except ValueError:
+                return "ERR start or end is not an integer"
+            result = store[key][start:end + 1]
+            logger.info(f"LRANGE {key} [{start}:{end}] -> {result}")
+            return result
+
+    def lindex(self, store, key, index):
+        """
+        Returns the element at the specified index in the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return "(nil)"
+            try:
+                index = int(index)
+            except ValueError:
+                return "ERR index is not an integer"
+            if index < 0 or index >= len(store[key]):
+                return "(nil)"
+            value = store[key][index]
+            logger.info(f"LINDEX {key} [{index}] -> {value}")
+            return value
+
+    def lset(self, store, key, index, value):
+        """
+        Sets the element at a specified index in the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return error
+            try:
+                index = int(index)
+            except ValueError:
+                return "ERR index is not an integer"
+            if index < 0 or index >= len(store[key]):
+                return "ERR Index out of range"
+            store[key][index] = value
+            logger.info(f"LSET {key} [{index}] -> {value}")
+            return "OK"
+
+    def llen(self, store, key):
+        """
+        Returns the length of the list.
+        """
+        with self.lock:
+            error = self._validate_key_is_list(store, key)
+            if error:
+                return 0
+            length = len(store[key])
+            logger.info(f"LLEN {key} -> {length}")
+            return length
+
+# src/datatypes/probabilistic.py
+from src.logger import setup_logger
+import threading
+import hashlib
+import math
+
+logger = setup_logger("probabilistic")
+
+class HyperLogLog:
+    def __init__(self, precision=14):
+        self.lock = threading.Lock()
+        self.precision = precision
+        self.num_buckets = 1 << precision
+        self.buckets = [0] * self.num_buckets
+
+    def __hash(self, value):
+        """
+        Hash a value into a 64-bit integer.
+        """
+        return int(hashlib.sha256(value.encode()).hexdigest(), 16)
+
+    def __get_bucket_and_position(self, hash_value):
+        """
+        Extract the bucket index and zero-run-length position.
+        """
+        bucket_index = hash_value & (self.num_buckets - 1)
+        hash_value >>= self.precision
+        position = len(bin(hash_value)) - len(bin(hash_value).rstrip('0'))
+        return bucket_index, position
+
+    def add(self, value):
+        """
+        Add a value to the HyperLogLog structure.
+        """
+        with self.lock:
+            hash_value = self.__hash(value)
+            bucket_index, position = self.__get_bucket_and_position(hash_value)
+            self.buckets[bucket_index] = max(self.buckets[bucket_index], position)
+            logger.info(f"PFADD -> Added {value} to bucket {bucket_index} with position {position}")
+            return 1
+
+    def count(self):
+        """
+        Estimate the cardinality of the HyperLogLog structure.
+        """
+        with self.lock:
+            # Estimate cardinality using the harmonic mean of bucket values
+            alpha = 0.7213 / (1 + 1.079 / self.num_buckets)
+            harmonic_mean = sum(2 ** -b for b in self.buckets)
+            raw_estimate = alpha * self.num_buckets ** 2 / harmonic_mean
+
+            # Apply small range correction
+            if raw_estimate <= 2.5 * self.num_buckets:
+                zeros = self.buckets.count(0)
+                if zeros > 0:
+                    raw_estimate = self.num_buckets * math.log(self.num_buckets / zeros)
+
+            # Apply large range correction
+            if raw_estimate > 1 << 32:
+                raw_estimate = -(1 << 32) * math.log(1 - raw_estimate / (1 << 32))
+
+            logger.info(f"PFCOUNT -> Estimated cardinality: {int(raw_estimate)}")
+            return int(raw_estimate)
+
+    def merge(self, other):
+        """
+        Merge another HyperLogLog structure into this one.
+        """
+        with self.lock:
+            if len(self.buckets) != len(other.buckets):
+                raise ValueError("HyperLogLogs must have the same precision to merge")
+            self.buckets = [max(a, b) for a, b in zip(self.buckets, other.buckets)]
+            logger.info("PFMERGE -> Merged two HyperLogLog structures")
+            return "OK"
+
+# src/datatypes/sets.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("sets")
+
+class Sets:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def sadd(self, store, key, *members):
+        """
+        Adds members to the set stored at the key.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = set()
+            if not isinstance(store[key], set):
+                return "ERR Key is not a set"
+            added = 0
+            for member in members:
+                if member not in store[key]:
+                    store[key].add(member)
+                    added += 1
+            logger.info(f"SADD {key} -> {added} members added")
+            return added
+
+    def srem(self, store, key, *members):
+        """
+        Removes members from the set stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], set):
+                return "ERR Key is not a set"
+            removed = 0
+            for member in members:
+                if member in store[key]:
+                    store[key].remove(member)
+                    removed += 1
+            logger.info(f"SREM {key} -> {removed} members removed")
+            return removed
+
+    def sismember(self, store, key, member):
+        """
+        Checks if a member is part of the set stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], set):
+                return 0
+            exists = 1 if member in store[key] else 0
+            logger.info(f"SISMEMBER {key} {member} -> {exists}")
+            return exists
+
+    def smembers(self, store, key):
+        """
+        Returns all members of the set stored at the key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], set):
+                return "(nil)"
+            members = list(store[key])
+            logger.info(f"SMEMBERS {key} -> {members}")
+            return members
+
+    def sinter(self, store, *keys):
+        """
+        Returns the intersection of sets stored at the specified keys.
+        """
+        with self.lock:
+            sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
+            if not sets:
+                return set()
+            result = set.intersection(*sets)
+            logger.info(f"SINTER {keys} -> {result}")
+            return result
+
+    def sunion(self, store, *keys):
+        """
+        Returns the union of sets stored at the specified keys.
+        """
+        with self.lock:
+            sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
+            result = set.union(*sets) if sets else set()
+            logger.info(f"SUNION {keys} -> {result}")
+            return result
+
+    def sdiff(self, store, key1, *keys):
+        """
+        Returns the difference of sets stored at the specified keys.
+        """
+        with self.lock:
+            if key1 not in store or not isinstance(store[key1], set):
+                return set()
+            base_set = store[key1]
+            other_sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
+            result = base_set.difference(*other_sets) if other_sets else base_set
+            logger.info(f"SDIFF {key1} {keys} -> {result}")
+            return result
+
+# src/datatypes/sorted_sets.py
+from src.logger import setup_logger
+import threading
+from sortedcontainers import SortedDict
+
+logger = setup_logger("sorted_sets")
+
+class SortedSets:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def zadd(self, store, key, *args):
+        """
+        Adds elements with their scores to the sorted set.
+        """
+        if len(args) % 2 != 0:
+            return "ERR Invalid number of arguments"
+        
+        with self.lock:
+            if key not in store:
+                store[key] = SortedDict()
+            if not isinstance(store[key], SortedDict):
+                return "ERR Key is not a sorted set"
+
+            added = 0
+            for i in range(0, len(args), 2):
+                try:
+                    score = float(args[i])
+                except ValueError:
+                    return "ERR Score is not a valid float"
+                member = args[i + 1]
+                if member not in store[key]:
+                    added += 1
+                store[key][member] = score
+            logger.info(f"ZADD {key} -> {added} members added")
+            return added
+
+    def zrange(self, store, key, start, end, with_scores=False):
+        """
+        Returns a range of members in the sorted set by rank.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], SortedDict):
+                return []
+            try:
+                start, end = int(start), int(end)
+            except ValueError:
+                return "ERR start or end is not an integer"
+            members = list(store[key].keys())
+            if end == -1 or end >= len(members):
+                end = len(members) - 1
+            result = members[start:end + 1]
+            if with_scores:
+                result = [(member, store[key][member]) for member in result]
+            logger.info(f"ZRANGE {key} [{start}:{end}] -> {result}")
+            return result
+
+    def zrank(self, store, key, member):
+        """
+        Returns the rank of the member in the sorted set.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], SortedDict):
+                return "(nil)"
+            members = list(store[key].keys())
+            rank = members.index(member) if member in members else None
+            logger.info(f"ZRANK {key} {member} -> {rank}")
+            return rank if rank is not None else "(nil)"
+
+    def zrem(self, store, key, *members):
+        """
+        Removes members from the sorted set.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], SortedDict):
+                return 0
+            removed = 0
+            for member in members:
+                if member in store[key]:
+                    del store[key][member]
+                    removed += 1
+            logger.info(f"ZREM {key} -> {removed} members removed")
+            return removed
+
+    def zrangebyscore(self, store, key, min_score, max_score, with_scores=False):
+        """
+        Returns members in the sorted set within the specified score range.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], SortedDict):
+                return []
+            try:
+                min_score, max_score = float(min_score), float(max_score)
+            except ValueError:
+                return "ERR min_score or max_score is not a valid float"
+            result = [(member, score) for member, score in store[key].items()
+                      if min_score <= score <= max_score]
+            if not with_scores:
+                result = [member for member, _ in result]
+            logger.info(f"ZRANGEBYSCORE {key} [{min_score}:{max_score}] -> {result}")
+            return result
+
+# src/datatypes/streams.py
+from src.logger import setup_logger
+import threading
+import time
+
+logger = setup_logger("streams")
+
+class Streams:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def xadd(self, store, key, entry_id, **fields):
+        """
+        Appends an entry to the stream.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = {"entries": {}, "group_data": {}}
+
+            if not isinstance(store[key], dict):
+                return "ERR Key is not a stream"
+
+            # Auto-generate ID if not provided
+            if entry_id == "*":
+                entry_id = f"{int(time.time() * 1000)}-{len(store[key]['entries'])}"
+
+            if entry_id in store[key]["entries"]:
+                return "ERR Entry ID already exists"
+
+            store[key]["entries"][entry_id] = fields
+            logger.info(f"XADD {key} {entry_id} -> {fields}")
+            return entry_id
+
+    def xread(self, store, key, count=None, last_id="0-0"):
+        """
+        Reads entries from the stream starting after the specified last_id.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return []
+
+            entries = sorted(store[key]["entries"].items())
+            start_index = 0
+
+            # Find the starting point based on last_id
+            for idx, (entry_id, _) in enumerate(entries):
+                if entry_id > last_id:
+                    start_index = idx
+                    break
+
+            result = entries[start_index: start_index + int(count)] if count else entries[start_index:]
+            logger.info(f"XREAD {key} from {last_id} -> {result}")
+            return result
+
+    def xrange(self, store, key, start="0-0", end="+", count=None):
+        """
+        Retrieves a range of entries from the stream.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return []
+
+            entries = sorted(store[key]["entries"].items())
+
+            # Convert + to the max possible value
+            if end == "+":
+                end = entries[-1][0] if entries else "0-0"
+
+            result = [(entry_id, data) for entry_id, data in entries if start <= entry_id <= end]
+            if count:
+                result = result[:int(count)]
+
+            logger.info(f"XRANGE {key} {start} {end} -> {result}")
+            return result
+
+    def xlen(self, store, key):
+        """
+        Returns the number of entries in the stream.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return 0
+            length = len(store[key]["entries"])
+            logger.info(f"XLEN {key} -> {length}")
+            return length
+        
+    def __initialize_stream(self, store, key):
+        if key not in store:
+            store[key] = {"entries": {}, "group_data": {}}
+
+    def xgroup_create(self, store, key, group_name, start_id="0-0"):
+        """
+        Creates a consumer group for the stream.
+        """
+        with self.lock:
+            self.__initialize_stream(store, key)
+            stream = store[key]
+
+            if group_name in stream["group_data"]:
+                return "ERR Group already exists"
+            
+            stream["group_data"][group_name] = {"consumers": {}, "pending": {}}
+            logger.info(f"XGROUP CREATE {key} {group_name} -> Start at {start_id}")
+            return "OK"
+
+    def xreadgroup(self, store, group_name, consumer_name, key, count=None, last_id=">"):
+        """
+        Reads messages for a specific consumer in the group.
+        """
+        with self.lock:
+            if key not in store:
+                return "ERR Stream does not exist"
+            stream = store[key]
+
+            if group_name not in stream["group_data"]:
+                return "ERR Group does not exist"
+
+            group = stream["group_data"][group_name]
+
+            if consumer_name not in group["consumers"]:
+                group["consumers"][consumer_name] = []
+
+            entries = list(stream["entries"].items())
+            result = []
+
+            for entry_id, entry_data in entries:
+                if entry_id > last_id or entry_id in group["pending"]:
+                    group["pending"][entry_id] = {"data": entry_data, "consumer": consumer_name}
+                    group["consumers"][consumer_name].append(entry_id)
+                    result.append((entry_id, entry_data))
+                    if count and len(result) >= int(count):
+                        break
+
+            logger.info(f"XREADGROUP {group_name} {consumer_name} {key} -> {result}")
+            return result
+
+    def xack(self, store, key, group_name, *entry_ids):
+        """
+        Acknowledges the processing of messages in the group.
+        """
+        with self.lock:
+            if key not in store or group_name not in store[key]["group_data"]:
+                return 0
+            group = store[key]["group_data"][group_name]
+
+            acked = 0
+            for entry_id in entry_ids:
+                if entry_id in group["pending"]:
+                    del group["pending"][entry_id]
+                    acked += 1
+
+            logger.info(f"XACK {key} {group_name} -> {acked} entries acknowledged")
+            return acked
+        
+# src/datatypes/strings.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("strings")
+
+class Strings:
+    def __init__(self, expiry_manager=None):
+        self.lock = threading.Lock()
+        self.expiry_manager = expiry_manager
+
+    def set(self, store, key, value):
+        """
+        Sets a string value for a key.
+        """
+        with self.lock:
+            store[key] = value
+            logger.info(f"SET {key} -> {value}")
+            return "OK"
+
+    def get(self, store, key):
+        """
+        Gets the string value for a key.
+        """
+        with self.lock:
+            value = store.get(key)
+            logger.info(f"GET {key} -> {value}")
+            return value if value is not None else "(nil)"
+
+    def append(self, store, key, value):
+        """
+        Appends a value to an existing string or sets it if key does not exist.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = value
+            else:
+                store[key] += value
+            logger.info(f"APPEND {key} -> {store[key]}")
+            return len(store[key])
+
+    def strlen(self, store, key):
+        """
+        Returns the length of the string for a key.
+        """
+        with self.lock:
+            if key not in store:
+                return 0
+            length = len(store[key])
+            logger.info(f"STRLEN {key} -> {length}")
+            return length
+
+    def incr(self, store, key):
+        return int(self._increment(store, key, 1))
+
+    def decr(self, store, key):
+        return int(self._increment(store, key, -1))
+
+    def incrby(self, store, key, increment):
+        try:
+            increment = int(increment)
+        except ValueError:
+            return "ERR increment is not an integer"
+        return int(self._increment(store, key, increment))
+
+    def decrby(self, store, key, decrement):
+        try:
+            decrement = int(decrement)
+        except ValueError:
+            return "ERR decrement is not an integer"
+        return int(self._increment(store, key, -decrement))
+
+    def _increment(self, store, key, delta):
+        """
+        Helper method to increment or decrement a string value as an integer.
+        """
+        with self.lock:
+            if key not in store:
+                store[key] = "0"
+            try:
+                store[key] = str(int(store[key]) + delta)
+                logger.info(f"INCR/DECR {key} -> {store[key]}")
+                return store[key]
+            except ValueError:
+                return "ERR Value is not an integer"
+
+    def getrange(self, store, key, start, end):
+        """
+        Gets a substring of the string value for a key.
+        """
+        with self.lock:
+            if key not in store:
+                return "(nil)"
+            start, end = int(start), int(end)
+            value = store[key][start:end + 1]
+            logger.info(f"GETRANGE {key} [{start}:{end}] -> {value}")
+            return value
+
+    def setrange(self, store, key, offset, value):
+        """
+        Overwrites part of the string value at a key starting at the specified offset.
+        """
+        with self.lock:
+            offset = int(offset)
+            if key not in store:
+                store[key] = "\0" * offset + value
+            else:
+                original = store[key]
+                store[key] = (original[:offset] + value +
+                              original[offset + len(value):])
+            logger.info(f"SETRANGE {key} [{offset}] -> {store[key]}")
+            return len(store[key])
+
+    def delete(self, store, key):
+        """
+        Deletes a key from the store.
+        """
+        with self.lock:
+            if key in store:
+                del store[key]
+                logger.info(f"DEL {key}")
+                return 1
+            return 0
+
+    def exists(self, store, key):
+        """
+        Checks if a key exists in the store.
+        """
+        with self.lock:
+            exists = key in store
+            logger.info(f"EXISTS {key} -> {exists}")
+            return 1 if exists else 0
+
+    def expire(self, store, key, ttl):
+        """
+        Sets an expiration time for a key.
+        """
+        with self.lock:
+            if key in store:
+                if self.expiry_manager:
+                    self.expiry_manager.set_expiry(key, ttl)
+                    logger.info(f"EXPIRE {key} {ttl}")
+                    return 1
+                else:
+                    logger.error("Expiry manager not set")
+                    return "ERR Expiry manager not set"
+            return 0
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "SET":
+            return self.set(store, args[0], args[1])
+        elif cmd == "GET":
+            return self.get(store, args[0])
+        elif cmd == "DEL":
+            return self.delete(store, args[0])
+        elif cmd == "EXISTS":
+            return self.exists(store, args[0])
+        elif cmd == "EXPIRE":
+            return self.expire(store, args[0], int(args[1]))
+        elif cmd == "INCR":
+            return self.incr(store, args[0])
+        elif cmd == "DECR":
+            return self.decr(store, args[0])
+        elif cmd == "INCRBY":
+            return self.incrby(store, args[0], args[1])
+        elif cmd == "DECRBY":
+            return self.decrby(store, args[0], args[1])
+        elif cmd == "APPEND":
+            return self.append(store, args[0], args[1])
+        elif cmd == "STRLEN":
+            return self.strlen(store, args[0])
+        elif cmd == "GETRANGE":
+            return self.getrange(store, args[0], args[1], args[2])
+        elif cmd == "SETRANGE":
+            return self.setrange(store, args[0], args[1], args[2])
+        return "ERR Unknown command"
+
+# src/datatypes/timeseries.py
+from src.logger import setup_logger
+import threading
+
+logger = setup_logger("timeseries")
+
+class TimeSeries:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def _validate_timestamp(self, timestamp):
+        try:
+            return int(timestamp)
+        except ValueError:
+            return None
+
+    def _validate_value(self, value):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+    def create(self, store, key):
+        """
+        Creates a time series structure.
+        """
+        with self.lock:
+            if key in store:
+                return "ERR Key already exists"
+            store[key] = []
+            logger.info(f"TS.CREATE {key}")
+            return "OK"
+
+    def add(self, store, key, timestamp, value):
+        """
+        Adds a data point to the time series.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return "ERR Time series does not exist"
+
+            timestamp = self._validate_timestamp(timestamp)
+            value = self._validate_value(value)
+
+            if timestamp is None or value is None:
+                return "ERR Invalid timestamp or value"
+
+            store[key].append((timestamp, value))
+            store[key].sort(key=lambda x: x[0])  # Ensure sorted order
+            logger.info(f"TS.ADD {key} {timestamp} -> {value}")
+            return "OK"
+
+    def get(self, store, key):
+        """
+        Gets the latest data point in the time series.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list) or not store[key]:
+                return "(nil)"
+            latest = store[key][-1]
+            logger.info(f"TS.GET {key} -> {latest}")
+            return latest
+
+    def range(self, store, key, start, end, aggregation=None):
+        """
+        Retrieves data points in a given time range, with optional aggregation.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], list):
+                return []
+
+            start, end = self._validate_timestamp(start), self._validate_timestamp(end)
+            if start is None or end is None:
+                return "ERR Invalid start or end timestamp"
+
+            result = [(ts, val) for ts, val in store[key] if start <= ts <= end]
+
+            if aggregation:
+                return self._apply_aggregation(result, aggregation)
+
+            logger.info(f"TS.RANGE {key} [{start}:{end}] -> {result}")
+            return result
+
+    def _apply_aggregation(self, result, aggregation):
+        """
+        Apply an aggregation function to the result.
+        """
+        if aggregation.upper() == "SUM":
+            aggregated = sum(val for _, val in result)
+            logger.info(f"TS.RANGE AGGREGATION SUM -> {aggregated}")
+            return aggregated
+        elif aggregation.upper() == "AVG":
+            aggregated = sum(val for _, val in result) / len(result) if result else 0
+            logger.info(f"TS.RANGE AGGREGATION AVG -> {aggregated}")
+            return aggregated
+        else:
+            return "ERR Unknown aggregation type"
+
+# src/datatypes/vectors.py
+from src.logger import setup_logger
+import threading
+import math
+
+logger = setup_logger("vectors")
+
+class Vectors:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def _validate_vector(self, vector):
+        if not isinstance(vector, list) or not all(isinstance(v, (int, float)) for v in vector):
+            return "ERR Vector must be a list of numbers"
+        return None
+
+    def add_vector(self, store, key, vector):
+        """
+        Add or update a vector in the store.
+        """
+        with self.lock:
+            error = self._validate_vector(vector)
+            if error:
+                return error
+            if key in store and not isinstance(store[key], list):
+                return "ERR Key exists and is not a vector"
+            store[key] = vector
+            logger.info(f"VECTOR.ADD {key} -> {vector}")
+            return "OK"
+
+    def similarity_search(self, store, query_vector, metric="cosine", top_k=1):
+        """
+        Perform a similarity search and return the top-k nearest vectors.
+        """
+        with self.lock:
+            error = self._validate_vector(query_vector)
+            if error:
+                return error
+
+            distances = []
+            for key, vector in store.items():
+                if not isinstance(vector, list):
+                    continue
+
+                if metric == "cosine":
+                    dist = self.__cosine_similarity(query_vector, vector)
+                elif metric == "euclidean":
+                    dist = self.__euclidean_distance(query_vector, vector)
+                else:
+                    return "ERR Unknown metric"
+
+                distances.append((key, dist))
+
+            reverse_sort = (metric == "cosine")
+            distances.sort(key=lambda x: x[1], reverse=reverse_sort)
+            result = distances[:top_k]
+            logger.info(f"SIMILARITY SEARCH -> {result}")
+            return result
+
+    def vector_operation(self, store, op, vector1, vector2):
+        """
+        Perform arithmetic operations on two vectors.
+        """
+        error1 = self._validate_vector(vector1)
+        error2 = self._validate_vector(vector2)
+        if error1:
+            return error1
+        if error2:
+            return error2
+
+        if len(vector1) != len(vector2):
+            return "ERR Vectors must have the same length"
+
+        if op == "add":
+            result = [a + b for a, b in zip(vector1, vector2)]
+        elif op == "sub":
+            result = [a - b for a, b in zip(vector1, vector2)]
+        elif op == "dot":
+            result = sum(a * b for a, b in zip(vector1, vector2))
+        else:
+            return "ERR Unknown operation"
+
+        logger.info(f"VECTOR.{op.upper()} -> {result}")
+        return result
+
+    def __cosine_similarity(self, vec1, vec2):
+        """
+        Calculate the cosine similarity between two vectors.
+        """
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        magnitude1 = math.sqrt(sum(a ** 2 for a in vec1))
+        magnitude2 = math.sqrt(sum(a ** 2 for a in vec2))
+        return dot_product / (magnitude1 * magnitude2) if magnitude1 and magnitude2 else 0
+
+    def __euclidean_distance(self, vec1, vec2):
+        """
+        Calculate the Euclidean distance between two vectors.
+        """
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(vec1, vec2)))

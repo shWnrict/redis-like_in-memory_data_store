@@ -3,35 +3,41 @@ class RESPProtocol:
     @staticmethod
     def parse_message(data):
         commands = []
-        # Convert incoming data into a list of lines for incremental processing
-        lines = data.splitlines()
-        idx = 0
-
-        while idx < len(lines):
-            line = lines[idx]
-            if not line.startswith("*"):
-                raise ProtocolError("Expected array length marker")
-            count = int(line[1:])
-            idx += 1
-
-            if count < 1:
-                raise ProtocolError("Invalid command length")
-
-            command = []
-            for _ in range(count):
-                length_line = lines[idx]
-                idx += 1
-                if not length_line.startswith("$"):
-                    raise ProtocolError("Expected bulk string marker")
-                length = int(length_line[1:])
-                bulk_data = lines[idx]
-                idx += 1
-                if len(bulk_data) != length:
-                    raise ProtocolError("Bulk string length mismatch")
-                command.append(bulk_data)
-
-            commands.append(command)
-
+        lines = data.split('\r\n')
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            if not line:
+                i += 1
+                continue
+                
+            if line[0] == '*':
+                count = int(line[1:])
+                command = []
+                i += 1
+                
+                for _ in range(count):
+                    if i >= len(lines):
+                        raise ProtocolError("Incomplete command")
+                    
+                    bulk_len = lines[i]
+                    if not bulk_len.startswith('$'):
+                        raise ProtocolError("Expected bulk string marker")
+                    
+                    length = int(bulk_len[1:])
+                    i += 1
+                    
+                    if i >= len(lines):
+                        raise ProtocolError("Incomplete command")
+                    
+                    command.append(lines[i])
+                    i += 1
+                    
+                commands.append(command)
+            else:
+                i += 1
+                
         return commands
 
     @staticmethod

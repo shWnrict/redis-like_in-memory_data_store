@@ -98,3 +98,14 @@ class Bitfields:
             return "-ERR Overflow\r\n"
 
         return self.set(key, offset, size, new_value)
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "BITFIELD":
+            subcmd = args[0].upper()
+            if subcmd == "GET":
+                return self.get(args[1], int(args[2]), int(args[3]))
+            elif subcmd == "SET":
+                return self.set(args[1], int(args[2]), int(args[3]), int(args[4]))
+            elif subcmd == "INCRBY":
+                return self.incrby(args[1], int(args[2]), int(args[3]), int(args[4]))
+        return "ERR Unknown subcommand"

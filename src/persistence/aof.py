@@ -46,20 +46,24 @@ class AOF:
             logger.error(f"AOF: Failed to truncate: {e}")
 
     def replay(self, process_command_func, data_store):
+        """
+        Replay commands from the AOF file.
+        """
         try:
             if not os.path.exists(self.file_path):
                 logger.warning("AOF: No AOF file found, starting fresh")
                 return
 
             with open(self.file_path, "r") as f:
-                for line in f:
-                    command = line.strip()
-                    if command:
-                        try:
-                            process_command_func(command)
-                        except Exception as e:
-                            logger.error(f"AOF: Error processing command '{command}': {e}")
-                            continue
+                commands = [line.strip() for line in f if line.strip()]
+                
+            # Process all commands in a single pass
+            for command in commands:
+                try:
+                    process_command_func(command)
+                except Exception as e:
+                    logger.error(f"AOF: Error processing command '{command}': {e}")
+                    continue
 
             logger.info("AOF: Replay completed successfully")
         except Exception as e:
