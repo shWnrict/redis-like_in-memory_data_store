@@ -1,44 +1,43 @@
-# Extend src/protocol.py for pipelining
+# src/protocol.py
 class RESPProtocol:
     @staticmethod
     def parse_message(data):
         try:
-            lines = data.splitlines()
-            if not lines or not lines[0].startswith("*"):
-                raise ValueError("Invalid RESP format")
-                
+            lines = iter(data.splitlines())
             commands = []
-            i = 0
-            while i < len(lines):
-                if not lines[i].startswith("*"):
-                    raise ValueError("Expected array length marker")
-                count = int(lines[i][1:])
-                if count < 1:
-                    raise ValueError("Invalid command length")
-                    
-                command = []
-                for _ in range(count):
-                    i += 1
-                    if i >= len(lines) or not lines[i].startswith("$"):
-                        raise ValueError("Invalid bulk string")
-                        
-                    i += 1
-                    if i >= len(lines):
-                        raise ValueError("Incomplete command")
-                    command.append(lines[i])
-                    
-                commands.append(command)
-                i += 1
-                
+
+            while True:
+                try:
+                    line = next(lines)
+                    if not line.startswith("*"):
+                        raise ValueError("Expected array length marker")
+                    count = int(line[1:])
+
+                    if count < 1:
+                        raise ValueError("Invalid command length")
+
+                    command = []
+                    for _ in range(count):
+                        line = next(lines)
+                        if not line.startswith("$"):
+                            raise ValueError("Expected bulk string marker")
+
+                        length = int(line[1:])
+                        bulk_data = next(lines)
+                        if len(bulk_data) != length:
+                            raise ValueError(f"Bulk string length mismatch. Expected {length}, got {len(bulk_data)}")
+                        command.append(bulk_data)
+
+                    commands.append(command)
+                except StopIteration:
+                    break  # End of input data
             return commands
-        except (ValueError, IndexError) as e:
+
+        except (ValueError, StopIteration) as e:
             raise ProtocolError(f"Protocol parsing error: {e}")
-    
+
     @staticmethod
     def format_response(response):
-        """
-        Format a Python object into a RESP-compatible response.
-        """
         if isinstance(response, list):
             resp = f"*{len(response)}\r\n"
             for item in response:
@@ -50,8 +49,13 @@ class RESPProtocol:
             return f"${len(response)}\r\n{response}\r\n"
         elif isinstance(response, int):
             return f":{response}\r\n"
+        elif isinstance(response, bool):
+            return ":1\r\n" if response else ":0\r\n"  # Boolean as integer
+        elif isinstance(response, float):
+            return f"${len(str(response))}\r\n{response}\r\n"  # Float as bulk string
         else:
-            raise ValueError("Unsupported response type")
+            raise ValueError(f"Unsupported response type: {type(response)}")
 
 class ProtocolError(Exception):
-    pass
+    def __init__(self, message):
+        super().__init__(f"RESP Protocol Error: {message}")
