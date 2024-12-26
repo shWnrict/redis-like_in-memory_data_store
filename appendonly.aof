@@ -1,0 +1,10 @@
+DEL myset
+DEL set1
+DEL set2
+DEL mylist
+LPUSH mylist world
+RPUSH mylist hello
+RPUSH mylist world
+LPUSH mylist world
+RPUSH mylist hello
+RPUSH mylist world

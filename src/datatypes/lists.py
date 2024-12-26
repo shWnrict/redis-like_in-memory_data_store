@@ -79,6 +79,13 @@ class Lists:
                 start, end = int(start), int(end)
             except ValueError:
                 return "ERR start or end is not an integer"
+            
+            # Adjust negative indices
+            if start < 0:
+                start = max(0, len(store[key]) + start)
+            if end < 0:
+                end = len(store[key]) + end
+
             result = store[key][start:end + 1]
             logger.info(f"LRANGE {key} [{start}:{end}] -> {result}")
             return result
@@ -130,3 +137,22 @@ class Lists:
             length = len(store[key])
             logger.info(f"LLEN {key} -> {length}")
             return length
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "LPUSH":
+            return self.lpush(store, args[0], *args[1:])
+        elif cmd == "RPUSH":
+            return self.rpush(store, args[0], *args[1:])
+        elif cmd == "LPOP":
+            return self.lpop(store, args[0])
+        elif cmd == "RPOP":
+            return self.rpop(store, args[0])
+        elif cmd == "LRANGE":
+            return self.lrange(store, args[0], args[1], args[2])
+        elif cmd == "LINDEX":
+            return self.lindex(store, args[0], args[1])
+        elif cmd == "LSET":
+            return self.lset(store, args[0], args[1], args[2])
+        elif cmd == "LLEN":
+            return self.llen(store, args[0])
+        return "ERR Unknown command"

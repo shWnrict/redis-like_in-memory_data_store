@@ -120,9 +120,6 @@ class Server:
             logger.error(f"Error replaying command {command}: {e}")
             return None
 
-    def __del__(self):
-        self.stop()
-
     def start(self):
         self.running = True
         self.server_socket.bind((self.host, self.port))
@@ -148,6 +145,7 @@ class Server:
         self.snapshot.save(self.data_store.store)
         self.server_socket.close()
         logger.info("Server stopped")
+
     def handle_client(self, client_socket):
         client_id = id(threading.current_thread())  # Generate unique client ID
         

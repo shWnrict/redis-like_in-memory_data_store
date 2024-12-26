@@ -69,8 +69,8 @@ class Sets:
         with self.lock:
             sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
             if not sets:
-                return set()
-            result = set.intersection(*sets)
+                return []
+            result = list(set.intersection(*sets))
             logger.info(f"SINTER {keys} -> {result}")
             return result
 
@@ -80,7 +80,7 @@ class Sets:
         """
         with self.lock:
             sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
-            result = set.union(*sets) if sets else set()
+            result = list(set.union(*sets)) if sets else []
             logger.info(f"SUNION {keys} -> {result}")
             return result
 
@@ -90,9 +90,26 @@ class Sets:
         """
         with self.lock:
             if key1 not in store or not isinstance(store[key1], set):
-                return set()
+                return []
             base_set = store[key1]
             other_sets = [store[key] for key in keys if key in store and isinstance(store[key], set)]
-            result = base_set.difference(*other_sets) if other_sets else base_set
+            result = list(base_set.difference(*other_sets)) if other_sets else list(base_set)
             logger.info(f"SDIFF {key1} {keys} -> {result}")
             return result
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "SADD":
+            return self.sadd(store, args[0], *args[1:])
+        elif cmd == "SREM":
+            return self.srem(store, args[0], *args[1:])
+        elif cmd == "SISMEMBER":
+            return self.sismember(store, args[0], args[1])
+        elif cmd == "SMEMBERS":
+            return self.smembers(store, args[0])
+        elif cmd == "SINTER":
+            return self.sinter(store, *args)
+        elif cmd == "SUNION":
+            return self.sunion(store, *args)
+        elif cmd == "SDIFF":
+            return self.sdiff(store, args[0], *args[1:])
+        return "ERR Unknown command"
