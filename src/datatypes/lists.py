@@ -75,7 +75,10 @@ class Lists:
             error = self._validate_key_is_list(store, key)
             if error:
                 return "(nil)"
-            start, end = int(start), int(end)
+            try:
+                start, end = int(start), int(end)
+            except ValueError:
+                return "ERR start or end is not an integer"
             result = store[key][start:end + 1]
             logger.info(f"LRANGE {key} [{start}:{end}] -> {result}")
             return result
@@ -88,7 +91,10 @@ class Lists:
             error = self._validate_key_is_list(store, key)
             if error:
                 return "(nil)"
-            index = int(index)
+            try:
+                index = int(index)
+            except ValueError:
+                return "ERR index is not an integer"
             if index < 0 or index >= len(store[key]):
                 return "(nil)"
             value = store[key][index]
@@ -103,7 +109,10 @@ class Lists:
             error = self._validate_key_is_list(store, key)
             if error:
                 return error
-            index = int(index)
+            try:
+                index = int(index)
+            except ValueError:
+                return "ERR index is not an integer"
             if index < 0 or index >= len(store[key]):
                 return "ERR Index out of range"
             store[key][index] = value

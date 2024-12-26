@@ -24,7 +24,10 @@ class SortedSets:
 
             added = 0
             for i in range(0, len(args), 2):
-                score = float(args[i])
+                try:
+                    score = float(args[i])
+                except ValueError:
+                    return "ERR Score is not a valid float"
                 member = args[i + 1]
                 if member not in store[key]:
                     added += 1
@@ -39,7 +42,10 @@ class SortedSets:
         with self.lock:
             if key not in store or not isinstance(store[key], SortedDict):
                 return []
-            start, end = int(start), int(end)
+            try:
+                start, end = int(start), int(end)
+            except ValueError:
+                return "ERR start or end is not an integer"
             members = list(store[key].keys())
             if end == -1 or end >= len(members):
                 end = len(members) - 1
@@ -83,7 +89,10 @@ class SortedSets:
         with self.lock:
             if key not in store or not isinstance(store[key], SortedDict):
                 return []
-            min_score, max_score = float(min_score), float(max_score)
+            try:
+                min_score, max_score = float(min_score), float(max_score)
+            except ValueError:
+                return "ERR min_score or max_score is not a valid float"
             result = [(member, score) for member, score in store[key].items()
                       if min_score <= score <= max_score]
             if not with_scores:

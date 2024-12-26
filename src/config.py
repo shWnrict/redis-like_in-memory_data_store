@@ -5,3 +5,6 @@ class Config:
     MAX_CLIENTS = 1000
     DATA_LIMIT = 1024 * 1024  # 1 MB per key
     SNAPSHOT_THRESHOLD = 1000  # Number of changes before triggering a snapshot
+    TIMEOUT = 60  # Timeout in seconds
+    RETRY_ATTEMPTS = 3  # Number of retry attempts
+    BACKUP_PATH = "/var/backups"  # Path to store backups

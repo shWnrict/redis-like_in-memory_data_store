@@ -42,9 +42,12 @@ class Bitfields:
         bit_offset = offset % 8
         mask = (1 << size) - 1
 
-        value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
-        value >>= (8 - ((bit_offset + size) % 8)) % 8
-        value &= mask
+        try:
+            value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
+            value >>= (8 - ((bit_offset + size) % 8)) % 8
+            value &= mask
+        except Exception as e:
+            return f"-ERR {str(e)}\r\n"
 
         return f":{value}\r\n"
 
@@ -69,12 +72,15 @@ class Bitfields:
         value &= mask
         value <<= (8 - ((bit_offset + size) % 8)) % 8
 
-        current_value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
-        current_value &= ~(mask << ((8 - ((bit_offset + size) % 8)) % 8))
-        current_value |= value
+        try:
+            current_value = int.from_bytes(bitfield[byte_offset:byte_offset + math.ceil((bit_offset + size) / 8)], 'big')
+            current_value &= ~(mask << ((8 - ((bit_offset + size) % 8)) % 8))
+            current_value |= value
 
-        new_bytes = current_value.to_bytes(math.ceil((bit_offset + size) / 8), 'big')
-        bitfield[byte_offset:byte_offset + len(new_bytes)] = new_bytes
+            new_bytes = current_value.to_bytes(math.ceil((bit_offset + size) / 8), 'big')
+            bitfield[byte_offset:byte_offset + len(new_bytes)] = new_bytes
+        except Exception as e:
+            return f"-ERR {str(e)}\r\n"
 
         return f":{value >> ((8 - ((bit_offset + size) % 8)) % 8)}\r\n"
 

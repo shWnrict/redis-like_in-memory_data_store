@@ -9,6 +9,7 @@ class MemoryManager:
         self.max_memory = Config.DATA_LIMIT
         self.current_memory = 0
         self.gc_threshold = 0.8 * self.max_memory  # 80% threshold
+        self.lock = threading.Lock()
         self._start_gc_thread()
 
     def _start_gc_thread(self):

@@ -15,19 +15,19 @@ class Streams:
         """
         with self.lock:
             if key not in store:
-                store[key] = {}
+                store[key] = {"entries": {}, "group_data": {}}
 
             if not isinstance(store[key], dict):
                 return "ERR Key is not a stream"
 
             # Auto-generate ID if not provided
             if entry_id == "*":
-                entry_id = f"{int(time.time() * 1000)}-{len(store[key])}"
+                entry_id = f"{int(time.time() * 1000)}-{len(store[key]['entries'])}"
 
-            if entry_id in store[key]:
+            if entry_id in store[key]["entries"]:
                 return "ERR Entry ID already exists"
 
-            store[key][entry_id] = fields
+            store[key]["entries"][entry_id] = fields
             logger.info(f"XADD {key} {entry_id} -> {fields}")
             return entry_id
 
@@ -39,7 +39,7 @@ class Streams:
             if key not in store or not isinstance(store[key], dict):
                 return []
 
-            entries = sorted(store[key].items())
+            entries = sorted(store[key]["entries"].items())
             start_index = 0
 
             # Find the starting point based on last_id
@@ -60,7 +60,7 @@ class Streams:
             if key not in store or not isinstance(store[key], dict):
                 return []
 
-            entries = sorted(store[key].items())
+            entries = sorted(store[key]["entries"].items())
 
             # Convert + to the max possible value
             if end == "+":
@@ -80,11 +80,10 @@ class Streams:
         with self.lock:
             if key not in store or not isinstance(store[key], dict):
                 return 0
-            length = len(store[key])
+            length = len(store[key]["entries"])
             logger.info(f"XLEN {key} -> {length}")
             return length
         
-#extended
     def __initialize_stream(self, store, key):
         if key not in store:
             store[key] = {"entries": {}, "group_data": {}}

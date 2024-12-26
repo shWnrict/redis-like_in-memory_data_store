@@ -18,13 +18,19 @@ class Bitmaps:
             if not isinstance(store[key], str):
                 return "ERR Key is not a string"
 
+            try:
+                offset = int(offset)
+                value = int(value)
+            except ValueError:
+                return "ERR offset or value is not an integer"
+
             byte_index = offset // 8
             bit_index = offset % 8
             while len(store[key]) <= byte_index:
                 store[key] += "\x00"  # Extend the string with null bytes
 
             current_byte = ord(store[key][byte_index])
-            if value == "1":
+            if value == 1:
                 new_byte = current_byte | (1 << (7 - bit_index))
             else:
                 new_byte = current_byte & ~(1 << (7 - bit_index))
@@ -40,6 +46,11 @@ class Bitmaps:
         with self.lock:
             if key not in store or not isinstance(store[key], str):
                 return 0
+
+            try:
+                offset = int(offset)
+            except ValueError:
+                return "ERR offset is not an integer"
 
             byte_index = offset // 8
             bit_index = offset % 8
@@ -59,8 +70,11 @@ class Bitmaps:
             if key not in store or not isinstance(store[key], str):
                 return 0
 
-            start = start or 0
-            end = end if end is not None else len(store[key]) - 1
+            try:
+                start = int(start) if start is not None else 0
+                end = int(end) if end is not None else len(store[key]) - 1
+            except ValueError:
+                return "ERR start or end is not an integer"
 
             count = 0
             for byte in store[key][start:end + 1]:

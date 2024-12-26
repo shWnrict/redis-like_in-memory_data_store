@@ -80,12 +80,16 @@ class Server:
         self.data_store.store = self.snapshot.load()
         self.aof.replay(self.process_command, self.data_store.store)
 
+    def __del__(self):
+        self.stop()
+
     def start(self):
+        self.running = True
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(self.max_clients)
         logger.info(f"Server started on {self.host}:{self.port}")
 
-        while True:
+        while self.running:
             try:
                 client_socket, _ = self.server_socket.accept()
                 client_socket.setblocking(False)
@@ -103,7 +107,8 @@ class Server:
                     pass
         self.snapshot.save(self.data_store.store)
         self.server_socket.close()
-    
+        logger.info("Server stopped")
+
     def handle_client(self, client_socket):
         with self.clients_lock:
             self.clients.add(client_socket)

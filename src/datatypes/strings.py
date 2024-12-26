@@ -56,10 +56,18 @@ class Strings:
         return self._increment(store, key, -1)
 
     def incrby(self, store, key, increment):
-        return self._increment(store, key, int(increment))
+        try:
+            increment = int(increment)
+        except ValueError:
+            return "ERR increment is not an integer"
+        return self._increment(store, key, increment)
 
     def decrby(self, store, key, decrement):
-        return self._increment(store, key, -int(decrement))
+        try:
+            decrement = int(decrement)
+        except ValueError:
+            return "ERR decrement is not an integer"
+        return self._increment(store, key, -decrement)
 
     def _increment(self, store, key, delta):
         """
