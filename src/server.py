@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 
 from src.config import Config
 from src.logger import setup_logger
@@ -31,6 +32,17 @@ from src.datatypes.timeseries import TimeSeries
 
 from src.datatypes.vectors import Vectors
 from src.datatypes.documents import Documents
+from src.clustering.keyspace_manager import KeyspaceManager  # Import KeyspaceManager
+from src.datatypes.base import BaseDataType  # Import BaseDataType
+from src.monitoring.stats import Stats  # Import Stats
+from src.monitoring.slowlog import SlowLog  # Import SlowLog
+from src.scripting.lua_engine import LuaEngine
+from src.clustering.hash_slots import HashSlots
+from src.clustering.node_communication import NodeCommunication
+
+from src.patterns.distributed_locks import DistributedLock
+from src.patterns.rate_limiter import RateLimiter
+from src.patterns.message_queue import MessageQueue
 
 logger = setup_logger(level=Config.LOG_LEVEL)
 
@@ -50,23 +62,24 @@ class Server:
         self.data_store = DataStore()
         self.memory_manager = MemoryManager()
         self.expiry_manager = ExpiryManager(self.data_store)
+        self.expiry_manager.start()  # Start ExpiryManager
         
-        # Initialize data type handlers
-        self.strings = Strings(self.expiry_manager)
-        self.lists = Lists()
-        self.sets = Sets()
-        self.hashes = Hashes()
-        self.sorted_sets = SortedSets()
-        self.streams = Streams()
-        self.json_type = JSONType()
-        self.bitmaps = Bitmaps()
-        self.bitfields = Bitfields(self.data_store)
-        self.geospatial = Geospatial()
+        # Initialize data type handlers with BaseDataType
+        self.strings = Strings(self.data_store.store, self.expiry_manager)
+        self.lists = Lists(self.data_store.store, self.expiry_manager)
+        self.sets = Sets(self.data_store.store, self.expiry_manager)
+        self.hashes = Hashes(self.data_store.store, self.expiry_manager)
+        self.sorted_sets = SortedSets(self.data_store.store, self.expiry_manager)
+        self.streams = Streams(self.data_store.store, self.expiry_manager)
+        self.json_type = JSONType(self.data_store.store, self.expiry_manager)
+        self.bitmaps = Bitmaps(self.data_store.store, self.expiry_manager)
+        self.bitfields = Bitfields(self.data_store.store, self.expiry_manager)
+        self.geospatial = Geospatial(self.data_store.store, self.expiry_manager)
         self.hyperloglogs = {}
-        self.timeseries = TimeSeries()
-        self.vectors = Vectors()
-        self.documents = Documents()
-        self.probabilistic = BloomFilter()
+        self.timeseries = TimeSeries(self.data_store.store, self.expiry_manager)
+        self.vectors = Vectors(self.data_store.store, self.expiry_manager)
+        self.documents = Documents(self.data_store.store, self.expiry_manager)
+        self.probabilistic = BloomFilter(self.data_store.store, self.expiry_manager)
 
         # Initialize persistence and transaction components
         self.aof = AOF()
@@ -78,6 +91,31 @@ class Server:
         # Initialize persistence state
         self.changes_since_snapshot = 0
         self.snapshot_threshold = Config.SNAPSHOT_THRESHOLD
+
+        # Initialize KeyspaceManager
+        self.keyspace_manager = KeyspaceManager()
+
+        # Pass KeyspaceManager to CommandRouter if needed
+        self.command_router.keyspace_manager = self.keyspace_manager
+
+        # Initialize monitoring components
+        self.stats = Stats(self.data_store)
+        self.slowlog = SlowLog(threshold_ms=100)  # Set threshold as needed
+
+        # Initialize LuaEngine
+        self.lua_engine = LuaEngine(self)
+        logger.info("LuaEngine integrated into server.")
+
+        # Initialize clustering components
+        self.hash_slots = HashSlots()
+        self.node_communication = NodeCommunication(Config.CLUSTER_HOST, Config.CLUSTER_PORT)
+        self.node_communication.connect()
+        logger.info("Cluster mode initialized and node communication established.")
+
+        # Initialize pattern handlers
+        self.distributed_lock = DistributedLock(self.data_store)
+        self.rate_limiter = RateLimiter(self.data_store, max_requests=100, window_seconds=60)
+        self.message_queue = MessageQueue(self.data_store, queue_name='default')
 
         # Load data from persistence (only once)
         self._load_persistence_data()
@@ -132,11 +170,14 @@ class Server:
 
         while self.running:
             try:
-                client_socket, _ = self.server_socket.accept()
-                client_socket.setblocking(False)
-                threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+                client_socket, addr = self.server_socket.accept()
+                logger.info(f"Accepted connection from {addr}")
+                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
+                client_thread.start()
             except BlockingIOError:
-                continue
+                time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Error accepting connections: {e}")
 
     def stop(self):
         self.running = False
@@ -147,6 +188,8 @@ class Server:
                 except:
                     pass
         self.snapshot.save(self.data_store)  # Pass the DataStore object directly
+        self.aof.truncate(self.data_store.store)
+        self.expiry_manager.stop()  # Stop ExpiryManager
         self.snapshot.stop()
         self.server_socket.close()
         logger.info("Server stopped")
@@ -171,8 +214,26 @@ class Server:
 
                     command_lists = RESPProtocol.parse_message(buffer.decode())
                     for command in command_lists:
-                        response = self.command_router.route(command, client_socket)  # Use CommandRouter
-                        formatted_response = RESPProtocol.format_response(response)
+                        cmd = command[0].upper()
+                        args = command[1:]
+
+                        # Rate limiting
+                        if not self.rate_limiter.is_allowed(str(client_id)):
+                            response = "ERR Rate limit exceeded"
+                            client_socket.sendall(RESPProtocol.format_response(response).encode())
+                            continue
+
+                        key = command[1] if len(command) > 1 else None
+                        if key:
+                            forwarded_response = self.distribute_key(key)
+                            if forwarded_response:
+                                formatted_response = forwarded_response
+                            else:
+                                response = self.command_router.route(command, client_socket)
+                                formatted_response = RESPProtocol.format_response(response)
+                        else:
+                            response = self.command_router.route(command, client_socket)
+                            formatted_response = RESPProtocol.format_response(response)
                         client_socket.sendall(formatted_response.encode())
                     buffer = b""
 
@@ -184,10 +245,20 @@ class Server:
             with self.clients_lock:
                 self.clients.remove(client_socket)
             client_socket.close()
+            logger.info(f"Client {client_id} disconnected.")
             
     def process_command(self, command, client_socket=None):
-        # Delegate command processing to CommandRouter
-        return self.command_router.route(command, client_socket)
+        start_time = time.time()
+        response = self.command_router.route(command, client_socket)
+        end_time = time.time()
+        execution_time_ms = (end_time - start_time) * 1000  # Convert to milliseconds
+        
+        # Log slow commands
+        cmd = command[0].upper() if command else "UNKNOWN"
+        args = command[1:] if len(command) > 1 else []
+        self.slowlog.add_entry(execution_time_ms, cmd, args)
+        
+        return response
 
     def handle_pubsub(self, cmd, args, client_socket):
         if cmd == "SUBSCRIBE":
@@ -282,6 +353,8 @@ class Server:
         elif cmd == "RESTORE":
             self.data_store.store = self.snapshot.load()
             return "OK"
+        elif cmd == "INFO":
+            return self.stats.handle_info()
         return None
 
     def handle_data_type_commands(self, cmd, args, client_socket):
@@ -320,6 +393,18 @@ class Server:
             for client_socket in self.clients:
                 if id(client_socket) == client_id:
                     return client_socket
+        return None
+
+    def distribute_key(self, key):
+        """
+        Determine the node responsible for the given key and forward the command if necessary.
+        """
+        node = self.hash_slots.get_node(key)
+        if node and node != f"{self.host}:{self.port}":
+            message = RESPProtocol.format_command("FORWARD", key, f"{self.host}:{self.port}")
+            self.node_communication.send_message(message)
+            response = self.node_communication.receive_message()
+            return response
         return None
 
 if __name__ == "__main__":

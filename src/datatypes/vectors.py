@@ -1,12 +1,14 @@
 # src/datatypes/vectors.py
+from src.datatypes.base import BaseDataType  # Import BaseDataType
 from src.logger import setup_logger
 import threading
 import math
 
 logger = setup_logger("vectors")
 
-class Vectors:
-    def __init__(self):
+class Vectors(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
     def _validate_vector(self, vector):
@@ -97,3 +99,84 @@ class Vectors:
         Calculate the Euclidean distance between two vectors.
         """
         return math.sqrt(sum((a - b) ** 2 for a, b in zip(vec1, vec2)))
+
+    def vector_set(self, store, key, *values):
+        """
+        Set a vector with the given values.
+        """
+        with self.lock:
+            vector = [float(v) for v in values]
+            store[key] = vector
+            logger.info(f"VECTOR.SET {key} -> {vector}")
+            return "OK"
+
+    def vector_add(self, store, key1, key2, destination_key):
+        """
+        Add two vectors and store the result in destination_key.
+        """
+        with self.lock:
+            vec1 = store.get(key1)
+            vec2 = store.get(key2)
+            if not isinstance(vec1, list) or not isinstance(vec2, list):
+                return "ERR One of the keys does not contain a vector"
+            if len(vec1) != len(vec2):
+                return "ERR Vectors must be of the same length"
+
+            result = [a + b for a, b in zip(vec1, vec2)]
+            store[destination_key] = result
+            logger.info(f"VECTOR.ADD {key1} + {key2} -> {destination_key}: {result}")
+            return "OK"
+
+    def vector_dot(self, store, key1, key2):
+        """
+        Calculate the dot product of two vectors.
+        """
+        with self.lock:
+            vec1 = store.get(key1)
+            vec2 = store.get(key2)
+            if not isinstance(vec1, list) or not isinstance(vec2, list):
+                return "ERR One of the keys does not contain a vector"
+            if len(vec1) != len(vec2):
+                return "ERR Vectors must be of the same length"
+            
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            logger.info(f"VECTOR.DOT {key1} . {key2} -> {dot_product}")
+            return dot_product
+
+    def vector_similarity(self, store, key1, key2):
+        """
+        Calculate the cosine similarity between two vectors.
+        """
+        with self.lock:
+            vec1 = store.get(key1)
+            vec2 = store.get(key2)
+            if not isinstance(vec1, list) or not isinstance(vec2, list):
+                return "ERR One of the keys does not contain a vector"
+            if len(vec1) != len(vec2):
+                return "ERR Vectors must be of the same length"
+
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            magnitude1 = math.sqrt(sum(a ** 2 for a in vec1))
+            magnitude2 = math.sqrt(sum(b ** 2 for b in vec2))
+            if magnitude1 == 0 or magnitude2 == 0:
+                return "ERR Zero magnitude vector"
+            similarity = dot_product / (magnitude1 * magnitude2)
+            logger.info(f"VECTOR.SIMILARITY {key1} ~ {key2} -> {similarity}")
+            return similarity
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "VECTOR.SET":
+            return self.vector_set(store, args[0], *args[1:])
+        elif cmd == "VECTOR.ADD":
+            if len(args) != 3:
+                return "ERR VECTOR.ADD requires 3 arguments"
+            return self.vector_add(store, args[0], args[1], args[2])
+        elif cmd == "VECTOR.DOT":
+            if len(args) != 2:
+                return "ERR VECTOR.DOT requires 2 arguments"
+            return self.vector_dot(store, args[0], args[1])
+        elif cmd == "VECTOR.SIMILARITY":
+            if len(args) != 2:
+                return "ERR VECTOR.SIMILARITY requires 2 arguments"
+            return self.vector_similarity(store, args[0], args[1])
+        return "ERR Unknown command"

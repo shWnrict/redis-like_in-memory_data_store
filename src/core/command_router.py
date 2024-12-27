@@ -1,5 +1,16 @@
 # src/core/command_router.py
 from src.logger import setup_logger
+from src.protocol import RESPProtocol  # Import RESPProtocol
+from src.datatypes.sorted_sets import SortedSets
+from src.datatypes.hashes import Hashes
+from src.datatypes.base import BaseDataType
+from src.monitoring.stats import Stats  # Ensure correct import
+from src.monitoring.slowlog import SlowLog  # Ensure correct import
+from src.datatypes.geospatial import Geospatial
+from src.scripting.lua_engine import LuaEngine  # Import LuaEngine
+from src.patterns.distributed_locks import DistributedLock
+from src.patterns.rate_limiter import RateLimiter
+from src.patterns.message_queue import MessageQueue
 
 logger = setup_logger("command_router")
 
@@ -12,13 +23,18 @@ class CommandRouter:
         self.server = server
         self.transaction_queue = []
         self.in_transaction = False
+
+        # Initialize pattern handlers
+        self.distributed_lock = DistributedLock(self.server.data_store)
+        self.rate_limiter = RateLimiter(self.server.data_store, max_requests=100, window_seconds=60)
+        self.message_queue = MessageQueue(self.server.data_store, queue_name='default')
         
         self.handlers = {
             "SET": self.server.strings.handle_command,
             "GET": self.server.strings.handle_command,
             "DEL": self.server.strings.handle_command,
             "EXISTS": self.server.strings.handle_command,
-            "EXPIRE": self.server.strings.handle_command,
+            "EXPIRE": self.handle_expire,
             "LPUSH": self.server.lists.handle_command,
             "RPUSH": self.server.lists.handle_command,
             "LPOP": self.server.lists.handle_command,
@@ -29,10 +45,36 @@ class CommandRouter:
             "SMEMBERS": self.server.sets.handle_command,
             "HSET": self.server.hashes.handle_command,
             "HGET": self.server.hashes.handle_command,
+            "HMSET": self.server.hashes.handle_command,
+            "HGETALL": self.server.hashes.handle_command,
+            "HDEL": self.server.hashes.handle_command,
+            "HEXISTS": self.server.hashes.handle_command,
             "ZADD": self.server.sorted_sets.handle_command,
             "ZRANGE": self.server.sorted_sets.handle_command,
-            # Add other command mappings as needed
+            "ZRANK": self.server.sorted_sets.handle_command,
+            "ZREM": self.server.sorted_sets.handle_command,
+            "ZRANGEBYSCORE": self.server.sorted_sets.handle_command,
+            "TTL": self.handle_ttl,
+            "PERSIST": self.handle_persist,
+            "SINTER": self.server.sets.handle_command,
+            "SUNION": self.server.sets.handle_command,
+            "SDIFF": self.server.sets.handle_command,
+            "INFO": self.handle_info,  # Add INFO command handler
+            "EVAL": self.handle_eval,
+            "EVALSHA": self.handle_evalsha,
+            "LOCK": self.handle_lock,
+            "UNLOCK": self.handle_unlock,
+            "RATE.LIMIT": self.handle_rate_limit,
+            "MQ.PUSH": self.handle_mq_push,
+            "MQ.POP": self.handle_mq_pop,
+            "MQ.PEEK": self.handle_mq_peek,
+            # Add other Lua scripting commands as needed
         }
+        
+        self.expiry_manager = server.expiry_manager  # Initialize ExpiryManager
+        self.stats = server.stats  # Initialize Stats
+        self.slowlog = server.slowlog  # Initialize SlowLog
+        self.lua_engine = LuaEngine(server)  # Initialize LuaEngine
 
     def route(self, command, client_socket):
         if not command:
@@ -90,7 +132,11 @@ class CommandRouter:
         handler = self.handlers.get(cmd)
         if handler:
             try:
-                return handler(cmd, args)
+                response = handler(cmd, args)
+                # If response is a string without RESP formatting, format it
+                if not response.endswith("\r\n"):
+                    response = RESPProtocol.format_response(response)
+                return response
             except Exception as e:
                 logger.error(f"Error executing command {cmd}: {e}")
                 return f"-ERR {str(e)}\r\n"
@@ -123,3 +169,178 @@ class CommandRouter:
             self.transaction_queue.clear()
             self.in_transaction = False
         return f"*{len(results)}\r\n{''.join(results)}"
+
+    def handle_info(self, cmd, args):
+        """
+        Handle the INFO command to provide server statistics.
+        """
+        if args:
+            return "ERR INFO command does not take any arguments"
+        return self.stats.handle_info()
+
+    def handle_expire(self, cmd, args):
+        if len(args) != 2:
+            return "-ERR wrong number of arguments for 'EXPIRE' command\r\n"
+        key, ttl = args
+        try:
+            ttl = int(ttl)
+            result = self.expiry_manager.handle_expire(key, ttl)
+            return f":{result}\r\n"
+        except ValueError:
+            return "-ERR invalid TTL value\r\n"
+
+    def handle_ttl(self, cmd, args):
+        if len(args) != 1:
+            return "-ERR wrong number of arguments for 'TTL' command\r\n"
+        key = args[0]
+        result = self.expiry_manager.handle_ttl(key)
+        return f":{result}\r\n"
+
+    def handle_persist(self, cmd, args):
+        if len(args) != 1:
+            return "-ERR wrong number of arguments for 'PERSIST' command\r\n"
+        key = args[0]
+        result = self.expiry_manager.handle_persist(key)
+        return f":{result}\r\n"
+
+    def handle_select(self, cmd, args):
+        if len(args) != 1:
+            return "-ERR wrong number of arguments for 'SELECT' command\r\n"
+        try:
+            db_index = int(args[0])
+            return self.keyspace_manager.select(db_index)
+        except ValueError:
+            return "-ERR invalid database index\r\n"
+
+    def handle_flushdb(self, cmd, args):
+        if len(args) != 0:
+            return "-ERR wrong number of arguments for 'FLUSHDB' command\r\n"
+        return self.keyspace_manager.flushdb()
+
+    def handle_randomkey(self, cmd, args):
+        if len(args) != 0:
+            return "-ERR wrong number of arguments for 'RANDOMKEY' command\r\n"
+        key = self.keyspace_manager.randomkey()
+        key = self.keyspace_manager.randomkey()
+        if key == "(nil)":
+            return "$-1\r\n"
+        return RESPProtocol.format_response(key)
+
+    def handle_eval(self, cmd, args):
+        """
+        Handle the EVAL command to execute Lua scripts.
+        EVAL script numkeys key [key ...] arg [arg ...]
+        """
+        if len(args) < 2:
+            return "ERR wrong number of arguments for 'EVAL' command"
+
+        script = args[0]
+        try:
+            numkeys = int(args[1])
+        except ValueError:
+            return "ERR numkeys must be an integer"
+
+        if len(args) < 2 + numkeys:
+            return "ERR not enough arguments for 'EVAL' command"
+
+        keys = args[2:2+numkeys]
+        arguments = args[2+numkeys:]
+
+        result = self.lua_engine.execute_script(script, keys, arguments)
+        return RESPProtocol.format_response(result)
+    
+    def handle_evalsha(self, cmd, args):
+        """
+        Handle the EVALSHA command to execute cached Lua scripts by SHA1 hash.
+        """
+        return "ERR EVALSHA not implemented yet"
+
+    def handle_command(self, cmd, store, *args):
+        if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
+            return self.server.geospatial.handle_command(cmd, store, *args)
+        # ...existing command handlers...
+        return "ERR Unknown command"
+
+    def handle_lock(self, cmd, args):
+        """
+        Handle the LOCK command to acquire a distributed lock.
+        LOCK lock_name ttl
+        """
+        if len(args) != 2:
+            return "ERR wrong number of arguments for 'LOCK' command"
+        lock_name, ttl = args
+        try:
+            ttl = int(ttl)
+        except ValueError:
+            return "ERR TTL must be an integer"
+
+        success = self.distributed_lock.acquire(lock_name, ttl)
+        return "OK" if success else "ERR Failed to acquire lock"
+
+    def handle_unlock(self, cmd, args):
+        """
+        Handle the UNLOCK command to release a distributed lock.
+        UNLOCK lock_name
+        """
+        if len(args) != 1:
+            return "ERR wrong number of arguments for 'UNLOCK' command"
+        lock_name = args[0]
+        success = self.distributed_lock.release(lock_name)
+        return "OK" if success else "ERR Failed to release lock"
+
+    def handle_rate_limit(self, cmd, args):
+        """
+        Handle the RATE.LIMIT command to check if a request is allowed.
+        RATE.LIMIT client_id
+        """
+        if len(args) != 1:
+            return "ERR wrong number of arguments for 'RATE.LIMIT' command"
+        client_id = args[0]
+        allowed = self.rate_limiter.is_allowed(client_id)
+        return "OK" if allowed else "ERR Rate limit exceeded"
+
+    def handle_mq_push(self, cmd, args):
+        """
+        Handle the MQ.PUSH command to enqueue a message.
+        MQ.PUSH queue_name message
+        """
+        if len(args) != 2:
+            return "ERR wrong number of arguments for 'MQ.PUSH' command"
+        queue_name, message = args
+        mq = MessageQueue(self.server.data_store, queue_name)
+        mq.enqueue(message)
+        return "OK"
+
+    def handle_mq_pop(self, cmd, args):
+        """
+        Handle the MQ.POP command to dequeue a message.
+        MQ.POP queue_name
+        """
+        if len(args) != 1:
+            return "ERR wrong number of arguments for 'MQ.POP' command"
+        queue_name = args[0]
+        mq = MessageQueue(self.server.data_store, queue_name)
+        message = mq.dequeue()
+        return RESPProtocol.format_response(message)
+
+    def handle_mq_peek(self, cmd, args):
+        """
+        Handle the MQ.PEEK command to view the next message without dequeuing.
+        MQ.PEEK queue_name
+        """
+        if len(args) != 1:
+            return "ERR wrong number of arguments for 'MQ.PEEK' command"
+        queue_name = args[0]
+        mq = MessageQueue(self.server.data_store, queue_name)
+        message = mq.peek()
+        return RESPProtocol.format_response(message)
+
+    def route(self, command, client_socket):
+        # ...existing routing logic...
+        cmd = command[0].upper()
+        args = command[1:]
+        handler = self.handlers.get(cmd)
+        if handler:
+            return handler(cmd, args)
+        # ...existing handlers...
+        return "ERR Unknown command"

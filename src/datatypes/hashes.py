@@ -1,11 +1,13 @@
 # src/datatypes/hashes.py
 from src.logger import setup_logger
 import threading
+from src.datatypes.base import BaseDataType  # Import BaseDataType
 
 logger = setup_logger("hashes")
 
-class Hashes:
-    def __init__(self):
+class Hashes(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
     def hset(self, store, key, field, value):

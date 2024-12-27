@@ -3,14 +3,17 @@ from threading import Lock
 import time
 from src.logger import setup_logger
 from src.config import Config
+from typing import Dict, Any
+from src.pubsub.publisher import PubSubPublisher  # Import PubSubPublisher
 
 logger = setup_logger("data_store", level=Config.LOG_LEVEL)
 
 class DataStore:
     def __init__(self):
-        self.store = {}
-        self.expiry = {}  # Store expiry timestamps for keys
+        self.store: Dict[str, Any] = {}
+        self.expiry: Dict[str, float] = {}  # Store expiry timestamps for keys
         self.lock = Lock()
+        self.publisher = PubSubPublisher()  # Initialize Publisher
 
     def _is_expired(self, key):
         """
@@ -36,7 +39,10 @@ class DataStore:
             if ttl:
                 self.expiry[key] = time.time() + ttl
             logger.info(f"SET {key} -> {value} (TTL={ttl})")
-            return "OK"
+            result = "OK"
+            if result == "OK":
+                self.publisher.publish_invalidation(key)
+            return result
 
     def _exceeds_memory_threshold(self):
         # Dummy example check
@@ -64,7 +70,10 @@ class DataStore:
                 del self.store[key]
                 self.expiry.pop(key, None)
                 logger.info(f"DEL {key}")
-                return 1
+                result = 1
+                if result == 1:
+                    self.publisher.publish_invalidation(key)
+                return result
             logger.info(f"DEL {key} -> Key not found.")
             return 0
 
@@ -101,3 +110,57 @@ class DataStore:
         Decrement the integer value of a key by the given amount.
         """
         return self.incr(key, -amount)
+
+    def lpush(self, key, value):
+        with self.lock:
+            self.store.setdefault(key, []).insert(0, value)
+            logger.info(f"LPUSH {key} -> {value}")
+            return "OK"
+
+    def rpop(self, key):
+        with self.lock:
+            if self._is_expired(key):
+                return "(nil)"
+            lst = self.store.get(key, [])
+            if lst:
+                value = lst.pop()
+                logger.info(f"RPOP {key} -> {value}")
+                return value
+            logger.info(f"RPOP {key} -> (nil)")
+            return "(nil)"
+
+    def lindex(self, key, index):
+        with self.lock:
+            if self._is_expired(key):
+                return "(nil)"
+            lst = self.store.get(key, [])
+            if -len(lst) <= index < len(lst):
+                value = lst[index]
+                logger.info(f"LINDEX {key} {index} -> {value}")
+                return value
+            logger.info(f"LINDEX {key} {index} -> (nil)")
+            return "(nil)"
+
+    def zadd(self, key, mapping):
+        with self.lock:
+            sorted_set = self.store.setdefault(key, {})
+            for member, score in mapping.items():
+                sorted_set[member] = score
+            logger.info(f"ZADD {key} -> {mapping}")
+            return "OK"
+
+    def zremrangebyscore(self, key, min_score, max_score):
+        with self.lock:
+            sorted_set = self.store.get(key, {})
+            to_remove = [member for member, score in sorted_set.items() if float(min_score) <= score <= float(max_score)]
+            for member in to_remove:
+                del sorted_set[member]
+            logger.info(f"ZREMRANGEBYSCORE {key} {min_score} {max_score} -> Removed {len(to_remove)} members")
+            return len(to_remove)
+
+    def zcard(self, key):
+        with self.lock:
+            sorted_set = self.store.get(key, {})
+            count = len(sorted_set)
+            logger.info(f"ZCARD {key} -> {count}")
+            return count

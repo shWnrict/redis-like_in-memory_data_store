@@ -1,9 +1,14 @@
 # src/datatypes/bitfields.py
 import math
+import threading
+from src.logger import setup_logger  # Import setup_logger
+
+logger = setup_logger("bitfields")  # Initialize logger
 
 class Bitfields:
     def __init__(self, data_store):
-        self.data_store = data_store
+        self.store = data_store
+        self.lock = threading.Lock()
 
     def _validate_size(self, size):
         if size < 1 or size > 64:
@@ -101,11 +106,44 @@ class Bitfields:
 
     def handle_command(self, cmd, store, *args):
         if cmd == "BITFIELD":
-            subcmd = args[0].upper()
-            if subcmd == "GET":
-                return self.get(args[1], int(args[2]), int(args[3]))
-            elif subcmd == "SET":
-                return self.set(args[1], int(args[2]), int(args[3]), int(args[4]))
-            elif subcmd == "INCRBY":
-                return self.incrby(args[1], int(args[2]), int(args[3]), int(args[4]))
-        return "ERR Unknown subcommand"
+            return self.bitfield(store, *args)
+        return "ERR Unknown BITFIELD command"
+
+    def bitfield(self, store, key: str, *subcommands: str):
+        with self.store.lock:
+            bitmap = self.store.store.get(key, 0)
+            i = 0
+            while i < len(subcommands):
+                subcmd = subcommands[i].upper()
+                if subcmd == "SET":
+                    if i + 3 >= len(subcommands):
+                        return "ERR BITFIELD SET requires 3 arguments"
+                    offset = int(subcommands[i+1])
+                    size = int(subcommands[i+2])
+                    value = int(subcommands[i+3])
+                    bitmap &= ~(((1 << size) - 1) << offset)
+                    bitmap |= (value & ((1 << size) - 1)) << offset
+                    i += 4
+                elif subcmd == "GET":
+                    if i + 2 >= len(subcommands):
+                        return "ERR BITFIELD GET requires 2 arguments"
+                    offset = int(subcommands[i+1])
+                    size = int(subcommands[i+2])
+                    value = (bitmap >> offset) & ((1 << size) - 1)
+                    return value
+                elif subcmd == "INCRBY":
+                    if i + 3 >= len(subcommands):
+                        return "ERR BITFIELD INCRBY requires 3 arguments"
+                    offset = int(subcommands[i+1])
+                    size = int(subcommands[i+2])
+                    increment = int(subcommands[i+3])
+                    current = (bitmap >> offset) & ((1 << size) - 1)
+                    current += increment
+                    bitmap &= ~(((1 << size) - 1) << offset)
+                    bitmap |= (current & ((1 << size) - 1)) << offset
+                    i += 4
+                else:
+                    return f"ERR Unknown BITFIELD subcommand {subcmd}"
+            self.store.store[key] = bitmap
+            logger.info(f"BITFIELD {key} -> {subcommands}")
+        return "OK"

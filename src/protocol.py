@@ -44,19 +44,33 @@ class RESPProtocol:
 
     @staticmethod
     def format_response(response):
-        # Handle single response
-        if not isinstance(response, list):
-            response = [response]
-        
-        if len(response) == 1:
-            # For single response, don't wrap in array
-            return RESPProtocol._format_single_response(response[0])
+        if isinstance(response, list):
+            if all(isinstance(item, tuple) for item in response):
+                # Handle TimeSeries range responses
+                resp = f"*{len(response)}\r\n"
+                for ts, val in response:
+                    resp += f"*2\r\n:{ts}\r\n:{val}\r\n"
+                return resp
+            elif all(isinstance(item, list) for item in response):
+                # Handle Streams or JSON arrays
+                resp = f"*{len(response)}\r\n"
+                for sublist in response:
+                    resp += RESPProtocol.format_array(sublist)
+                return resp
+            else:
+                # Generic array
+                return RESPProtocol.format_array(response)
+        elif isinstance(response, dict):
+            # Serialize dictionary as JSON string
+            return f"${len(json.dumps(response))}\r\n{json.dumps(response)}\r\n"
+        elif response is None:
+            return "$-1\r\n"  # (nil)
+        elif isinstance(response, (int, float)):
+            return f":{response}\r\n"
+        elif isinstance(response, str):
+            return f"+{response}\r\n"
         else:
-            # For multiple responses, use array format
-            resp = f"*{len(response)}\r\n"
-            for item in response:
-                resp += RESPProtocol._format_single_response(item)
-            return resp
+            return f"+{str(response)}\r\n"
 
     @staticmethod
     def _format_single_response(response):
@@ -158,6 +172,18 @@ class RESPProtocol:
             responses.append(parsed)
             response = rest
         return responses
+
+    @staticmethod
+    def format_array(items):
+        resp = f"*{len(items)}\r\n"
+        for item in items:
+            if isinstance(item, list):
+                resp += RESPProtocol.format_array(item)
+            elif isinstance(item, tuple):
+                resp += f"*2\r\n:{item[0]}\r\n:{item[1]}\r\n"
+            else:
+                resp += f"${len(str(item))}\r\n{item}\r\n"
+        return resp
 
 class ProtocolError(Exception):
     def __init__(self, message):

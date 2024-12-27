@@ -2,11 +2,13 @@
 from src.logger import setup_logger
 import threading
 from sortedcontainers import SortedDict
+from src.datatypes.base import BaseDataType  # Import BaseDataType
 
 logger = setup_logger("sorted_sets")
 
-class SortedSets:
-    def __init__(self):
+class SortedSets(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
     def zadd(self, store, key, *args):

@@ -2,6 +2,7 @@
 from src.logger import setup_logger
 import threading
 import json
+import re
 
 logger = setup_logger("json")
 
@@ -132,13 +133,38 @@ class JSONType:
             current[last_key].extend(parsed_values)
             return len(current[last_key])
         
+    def json_query(self, store, key, json_path):
+        """
+        Retrieve data using a simple JSONPath-like syntax.
+        Supports paths like $.store.book[0].title
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], (dict, list)):
+                return None
+
+            data = store[key]
+            # Simple regex to parse JSONPath
+            tokens = re.findall(r'\w+|\[\d+\]', json_path)
+            try:
+                for token in tokens:
+                    if token.startswith('[') and token.endswith(']'):
+                        index = int(token[1:-1])
+                        data = data[index]
+                    else:
+                        data = data[token]
+                return data
+            except (KeyError, IndexError, TypeError):
+                return None
+
     def handle_command(self, cmd, store, *args):
         if cmd == "JSON.SET":
             return self.json_set(store, args[0], args[1], args[2])
         elif cmd == "JSON.GET":
-            return self.json_get(store, args[0], args[1])
+            return self.json_get(store, args[0], args[1]) if len(args) > 1 else self.json_get(store, args[0], ".")
         elif cmd == "JSON.DEL":
             return self.json_del(store, args[0], args[1])
         elif cmd == "JSON.ARRAPPEND":
             return self.json_arrappend(store, args[0], args[1], *args[2:])
+        elif cmd == "JSON.QUERY":
+            return self.json_query(store, args[0], args[1])
         return "ERR Unknown command"

@@ -1,4 +1,4 @@
-from src.protocol import RESPProtocol  # Import RESPProtocol
+from src.protocol import RESPProtocol  # Ensure RESPProtocol is imported
 
 class Pipeline:
     def __init__(self, connection):

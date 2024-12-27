@@ -1,142 +1,142 @@
 # src/datatypes/strings.py
 from src.logger import setup_logger
 import threading
+from src.datatypes.base import BaseDataType
 
 logger = setup_logger("strings")
 
-class Strings:
-    def __init__(self, expiry_manager=None):
-        self.lock = threading.Lock()
-        self.expiry_manager = expiry_manager
+class Strings(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
 
-    def set(self, store, key, value):
+    def set(self, key, value):
         """
         Sets a string value for a key.
         """
         with self.lock:
-            store[key] = value
+            self.store[key] = value
             logger.info(f"SET {key} -> {value}")
             return "OK"
 
-    def get(self, store, key):
+    def get(self, key):
         """
         Gets the string value for a key.
         """
         with self.lock:
-            value = store.get(key)
+            value = self.store.get(key)
             logger.info(f"GET {key} -> {value}")
             return value if value is not None else "(nil)"
 
-    def append(self, store, key, value):
+    def append(self, key, value):
         """
         Appends a value to an existing string or sets it if key does not exist.
         """
         with self.lock:
-            if key not in store:
-                store[key] = value
+            if key not in self.store:
+                self.store[key] = value
             else:
-                store[key] += value
-            logger.info(f"APPEND {key} -> {store[key]}")
-            return len(store[key])
+                self.store[key] += value
+            logger.info(f"APPEND {key} -> {self.store[key]}")
+            return len(self.store[key])
 
-    def strlen(self, store, key):
+    def strlen(self, key):
         """
         Returns the length of the string for a key.
         """
         with self.lock:
-            if key not in store:
+            if key not in self.store:
                 return 0
-            length = len(store[key])
+            length = len(self.store[key])
             logger.info(f"STRLEN {key} -> {length}")
             return length
 
-    def incr(self, store, key):
-        return int(self._increment(store, key, 1))
+    def incr(self, key):
+        return int(self._increment(key, 1))
 
-    def decr(self, store, key):
-        return int(self._increment(store, key, -1))
+    def decr(self, key):
+        return int(self._increment(key, -1))
 
-    def incrby(self, store, key, increment):
+    def incrby(self, key, increment):
         try:
             increment = int(increment)
         except ValueError:
             return "ERR increment is not an integer"
-        return int(self._increment(store, key, increment))
+        return int(self._increment(key, increment))
 
-    def decrby(self, store, key, decrement):
+    def decrby(self, key, decrement):
         try:
             decrement = int(decrement)
         except ValueError:
             return "ERR decrement is not an integer"
-        return int(self._increment(store, key, -decrement))
+        return int(self._increment(key, -decrement))
 
-    def _increment(self, store, key, delta):
+    def _increment(self, key, delta):
         """
         Helper method to increment or decrement a string value as an integer.
         """
         with self.lock:
-            if key not in store:
-                store[key] = "0"
+            if key not in self.store:
+                self.store[key] = "0"
             try:
-                store[key] = str(int(store[key]) + delta)
-                logger.info(f"INCR/DECR {key} -> {store[key]}")
-                return store[key]
+                self.store[key] = str(int(self.store[key]) + delta)
+                logger.info(f"INCR/DECR {key} -> {self.store[key]}")
+                return self.store[key]
             except ValueError:
                 return "ERR Value is not an integer"
 
-    def getrange(self, store, key, start, end):
+    def getrange(self, key, start, end):
         """
         Gets a substring of the string value for a key.
         """
         with self.lock:
-            if key not in store:
+            if key not in self.store:
                 return "(nil)"
             start, end = int(start), int(end)
-            value = store[key][start:end + 1]
+            value = self.store[key][start:end + 1]
             logger.info(f"GETRANGE {key} [{start}:{end}] -> {value}")
             return value
 
-    def setrange(self, store, key, offset, value):
+    def setrange(self, key, offset, value):
         """
         Overwrites part of the string value at a key starting at the specified offset.
         """
         with self.lock:
             offset = int(offset)
-            if key not in store:
-                store[key] = "\0" * offset + value
+            if key not in self.store:
+                self.store[key] = "\0" * offset + value
             else:
-                original = store[key]
-                store[key] = (original[:offset] + value +
+                original = self.store[key]
+                self.store[key] = (original[:offset] + value +
                               original[offset + len(value):])
-            logger.info(f"SETRANGE {key} [{offset}] -> {store[key]}")
-            return len(store[key])
+            logger.info(f"SETRANGE {key} [{offset}] -> {self.store[key]}")
+            return len(self.store[key])
 
-    def delete(self, store, key):
+    def delete(self, key):
         """
         Deletes a key from the store.
         """
         with self.lock:
-            if key in store:
-                del store[key]
+            if key in self.store:
+                del self.store[key]
                 logger.info(f"DEL {key}")
                 return 1
             return 0
 
-    def exists(self, store, key):
+    def exists(self, key):
         """
         Checks if a key exists in the store.
         """
         with self.lock:
-            exists = key in store
+            exists = key in self.store
             logger.info(f"EXISTS {key} -> {exists}")
             return 1 if exists else 0
 
-    def expire(self, store, key, ttl):
+    def expire(self, key, ttl):
         """
         Sets an expiration time for a key.
         """
         with self.lock:
-            if key in store:
+            if key in self.store:
                 if self.expiry_manager:
                     self.expiry_manager.set_expiry(key, ttl)
                     logger.info(f"EXPIRE {key} {ttl}")
@@ -148,29 +148,29 @@ class Strings:
 
     def handle_command(self, cmd, store, *args):
         if cmd == "SET":
-            return self.set(store, args[0], args[1])
+            return self.set(args[0], args[1])
         elif cmd == "GET":
-            return self.get(store, args[0])
+            return self.get(args[0])
         elif cmd == "DEL":
-            return self.delete(store, args[0])
+            return self.delete(args[0])
         elif cmd == "EXISTS":
-            return self.exists(store, args[0])
+            return self.exists(args[0])
         elif cmd == "EXPIRE":
-            return self.expire(store, args[0], int(args[1]))
+            return self.expire(args[0], int(args[1]))
         elif cmd == "INCR":
-            return self.incr(store, args[0])
+            return self.incr(args[0])
         elif cmd == "DECR":
-            return self.decr(store, args[0])
+            return self.decr(args[0])
         elif cmd == "INCRBY":
-            return self.incrby(store, args[0], args[1])
+            return self.incrby(args[0], args[1])
         elif cmd == "DECRBY":
-            return self.decrby(store, args[0], args[1])
+            return self.decrby(args[0], args[1])
         elif cmd == "APPEND":
-            return self.append(store, args[0], args[1])
+            return self.append(args[0], args[1])
         elif cmd == "STRLEN":
-            return self.strlen(store, args[0])
+            return self.strlen(args[0])
         elif cmd == "GETRANGE":
-            return self.getrange(store, args[0], args[1], args[2])
+            return self.getrange(args[0], args[1], args[2])
         elif cmd == "SETRANGE":
-            return self.setrange(store, args[0], args[1], args[2])
+            return self.setrange(args[0], args[1], args[2])
         return "ERR Unknown command"

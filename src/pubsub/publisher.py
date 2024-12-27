@@ -4,6 +4,7 @@ from src.protocol import RESPProtocol
 from collections import defaultdict
 from typing import Dict, Set, Optional, List, Union
 import socket
+from src.pubsub.subscriber import Subscriber
 
 logger = setup_logger("pubsub")
 
@@ -104,8 +105,9 @@ class PubSub:
             active_subscribers = set()
             failed_clients = set()
 
-            for client_socket in self.channels[channel]:
-                if self._send_message_to_client(client_socket, message_data):
+            for client_socket in list(self.channels[channel]):
+                subscriber = Subscriber(client_socket, self)
+                if self._send_message_to_client(subscriber, message_data):
                     active_subscribers.add(client_socket)
                 else:
                     failed_clients.add(client_socket)
@@ -116,24 +118,31 @@ class PubSub:
             logger.info(f"Published message to {len(active_subscribers)} subscribers on channel {channel}")
             return len(active_subscribers)
 
-    def _send_message_to_client(self, client_socket: socket.socket, message: List[Union[str, int]]) -> bool:
+    def publish_invalidation(self, key):
         """
-        Send a message to a specific client.
+        Publish a cache invalidation message for the specified key.
+        """
+        message = f"INVALIDATE {key}"
+        topic = "cache_invalidation"
+        self.publish(topic, message)
+        logger.info(f"Published invalidation message for key '{key}' on topic '{topic}'.")
+
+    def _send_message_to_client(self, subscriber: Subscriber, message: List[Union[str, int]]) -> bool:
+        """
+        Send a message to a specific subscriber.
         
         Args:
-            client_socket: The client's socket object
+            subscriber: The Subscriber instance
             message: The message to send
             
         Returns:
             bool indicating if the message was sent successfully
         """
         try:
-            formatted_message = RESPProtocol.format_response(message)
-            client_socket.sendall(formatted_message.encode())
-            logger.debug(f"Message sent to client {client_socket}: {message}")
+            subscriber.handle_message(message)
             return True
         except Exception as e:
-            logger.error(f"Failed to send message to client {client_socket}: {e}")
+            logger.error(f"Failed to send message to subscriber {subscriber.client_socket}: {e}")
             return False
 
     def _cleanup_failed_clients(self, failed_clients: Set[socket.socket]) -> None:
@@ -159,6 +168,7 @@ class PubSub:
     def get_client_subscriptions(self, client_socket: socket.socket) -> Set[str]:
         """
         Get all channels a client is subscribed to.
+
         
         Args:
             client_socket: The client's socket object
@@ -168,3 +178,30 @@ class PubSub:
         """
         with self.lock:
             return self.client_channels.get(client_socket, set()).copy()
+# src/pubsub/publisher.py
+import socket
+from src.logger import setup_logger
+
+logger = setup_logger("publisher")
+
+class PubSubPublisher:
+    def __init__(self, host="localhost", port=5555):
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            self.socket.connect((self.host, self.port))
+            logger.info(f"Connected to Pub/Sub server at {self.host}:{self.port}.")
+        except Exception as e:
+            logger.error(f"Failed to connect to Pub/Sub server: {e}")
+
+    def publish(self, topic, message):
+        """
+        Publish a message to the specified topic.
+        """
+        try:
+            full_message = f"PUBLISH {topic} {message}\n"
+            self.socket.sendall(full_message.encode())
+            logger.info(f"Published message to topic '{topic}': {message}")
+        except Exception as e:
+            logger.error(f"Failed to publish message: {e}")

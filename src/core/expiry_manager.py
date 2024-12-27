@@ -12,61 +12,66 @@ class ExpiryManager:
         self.store = store
         self.lock = threading.Lock()
         self.cleanup_interval = cleanup_interval
-        self.cleanup_thread = threading.Thread(target=self.cleanup_expired_keys, daemon=True)
-        self.cleanup_thread.start()
+        self.running = False
+        self.thread = threading.Thread(target=self.cleanup_expired_keys)
+        self.thread.daemon = True
+
+    def start(self):
+        self.running = True
+        self.thread.start()
+        logger.info("ExpiryManager started.")
+
+    def stop(self):
+        self.running = False
+        self.thread.join()
+        logger.info("ExpiryManager stopped.")
 
     def set_expiry(self, key, ttl):
-        """
-        Set a TTL (time-to-live) for a key.
-        """
-        expiry_time = time.time() + ttl
         with self.lock:
-            self.expiry[key] = expiry_time
-        logger.info(f"Set expiry for key '{key}' to {expiry_time}")
+            self.expiry[key] = time.time() + ttl
+            logger.info(f"Set expiry for key '{key}' to TTL={ttl} seconds.")
 
     def is_expired(self, key):
-        """
-        Check if a key is expired. Removes the key if expired.
-        """
         with self.lock:
-            if key not in self.expiry:
-                return False
-            if time.time() > self.expiry[key]:
-                logger.info(f"Key '{key}' has expired.")
-                self.remove_expired_key(key)
-                return True
-        return False
+            if key in self.expiry:
+                if time.time() > self.expiry[key]:
+                    logger.info(f"Key '{key}' has expired.")
+                    return True
+            return False
 
     def remove_expired_key(self, key):
-        """
-        Remove the key from both expiry and the store if it exists.
-        """
         with self.lock:
-            self.expiry.pop(key, None)
-            if key in self.store.store:
-                del self.store.store[key]
-                logger.info(f"Removed expired key '{key}' from store.")
+            if key in self.expiry:
+                del self.expiry[key]
+                if key in self.store:
+                    del self.store[key]
+                logger.info(f"Removed expired key '{key}'.")
 
     def cleanup_expired_keys(self):
-        """
-        Background task to periodically clean up expired keys.
-        """
-        while True:
-            try:
-                # Instead of scanning all keys, track earliest expiry
-                with self.lock:
-                    if not self.expiry:
-                        time.sleep(self.cleanup_interval)
-                        continue
-                    earliest_expiry = min(self.expiry.values())
-                now = time.time()
-                sleep_time = earliest_expiry - now
-                if sleep_time > 0:
-                    time.sleep(min(sleep_time, self.cleanup_interval))
+        while self.running:
+            time.sleep(self.cleanup_interval)
+            with self.lock:
+                keys_to_remove = [key for key, expiry_time in self.expiry.items() if time.time() > expiry_time]
+            for key in keys_to_remove:
+                self.remove_expired_key(key)
 
-                with self.lock:
-                    keys_to_remove = [key for key, expiry in self.expiry.items() if now > expiry]
-                for key in keys_to_remove:
-                    self.remove_expired_key(key)
-            except Exception as e:
-                logger.error(f"Error in cleanup thread: {e}")
+    def handle_expire(self, key, ttl):
+        if key not in self.store:
+            return 0
+        self.set_expiry(key, ttl)
+        return 1
+
+    def handle_ttl(self, key):
+        with self.lock:
+            if key not in self.expiry:
+                return -1
+            ttl = int(self.expiry[key] - time.time())
+            return ttl if ttl > 0 else -1
+
+    def handle_persist(self, key):
+        with self.lock:
+            if key in self.expiry:
+                del self.expiry[key]
+                logger.info(f"Persisted key '{key}', removing expiry.")
+                return 1
+            return 0
