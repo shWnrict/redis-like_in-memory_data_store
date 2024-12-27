@@ -73,7 +73,7 @@ class Server:
         self.snapshot = Snapshot(self.data_store)
         self.transaction_manager = TransactionManager()
         self.pubsub = PubSub(self)  # Pass the server instance to PubSub
-        self.command_router = CommandRouter(self)
+        self.command_router = CommandRouter(self)  # Ensure CommandRouter utilizes data type handlers
         
         # Initialize persistence state
         self.changes_since_snapshot = 0
@@ -170,13 +170,14 @@ class Server:
                         continue
 
                     command_lists = RESPProtocol.parse_message(buffer.decode())
-                    response = self.process_command(command_lists[0], client_socket)  # Pass client_socket
-                    formatted_response = RESPProtocol.format_response(response)
-                    client_socket.send(formatted_response.encode())
+                    for command in command_lists:
+                        response = self.command_router.route(command, client_socket)  # Use CommandRouter
+                        formatted_response = RESPProtocol.format_response(response)
+                        client_socket.sendall(formatted_response.encode())
                     buffer = b""
 
                 except BlockingIOError:
-                    pass
+                    continue
         except Exception as e:
             logger.error(f"Error handling client: {e}")
         finally:
@@ -185,53 +186,8 @@ class Server:
             client_socket.close()
             
     def process_command(self, command, client_socket=None):
-        try:
-            if not command:
-                return "ERR Empty command"
-
-            if isinstance(command, str):
-                # Handle string commands from AOF replay
-                parts = command.split()
-                cmd = parts[0].upper()
-                args = parts[1:]
-            else:
-                # Join split commands (e.g., "S", "ET" -> "SET")
-                if len(command) >= 2 and command[0] + command[1] in {"SET", "DEL", "GET"}:
-                    cmd = command[0] + command[1]
-                    args = command[2:]
-                else:
-                    cmd = command[0].upper()
-                    args = command[1:]
-
-            logger.info(f"Processing command: {cmd} with args: {args} from client: {client_socket}")
-
-            handlers = [
-                self.handle_pubsub,
-                self.handle_transactions,
-                self.handle_persistence,
-                self.handle_general_commands,
-                self.handle_data_type_commands
-            ]
-
-            for handler in handlers:
-                result = handler(cmd, args, client_socket)
-                if result is not None:
-                    return result
-
-            if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
-                return self.geospatial.handle_command(cmd, self.data_store.store, *args)
-            if cmd in {"SETBIT", "GETBIT", "BITCOUNT", "BITOP", "BITFIELD"}:
-                return self.bitfields.handle_command(cmd, self.data_store.store, *args)
-            if cmd in {"PFADD", "PFCOUNT", "PFMERGE", "BFADD", "BFEXISTS", "BF.RESERVE"}:
-                return self.probabilistic.handle_command(cmd, self.data_store.store, *args)
-            if cmd in {"TS.CREATE", "TS.ADD", "TS.GET", "TS.RANGE", "TS.QUERYINDEX"}:
-                return self.timeseries.handle_command(cmd, self.data_store.store, *args)
-
-            logger.error(f"Unknown command: {cmd}")
-            return "ERR Unknown command"
-        except Exception as e:
-            logger.error(f"Command processing error: {e}")
-            return "ERR Invalid Command"
+        # Delegate command processing to CommandRouter
+        return self.command_router.route(command, client_socket)
 
     def handle_pubsub(self, cmd, args, client_socket):
         if cmd == "SUBSCRIBE":

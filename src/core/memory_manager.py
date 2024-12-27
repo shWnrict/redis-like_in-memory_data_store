@@ -43,3 +43,11 @@ class MemoryManager:
 
     def remove(self, value):
         self.current_memory -= self.calculate_size(value)
+
+    def _remove_expired(self):
+        # Placeholder for removing expired keys
+        pass
+
+    def _remove_lru(self):
+        # Placeholder for removing least recently used keys
+        pass

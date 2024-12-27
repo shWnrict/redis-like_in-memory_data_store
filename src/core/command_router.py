@@ -13,78 +13,39 @@ class CommandRouter:
         self.transaction_queue = []
         self.in_transaction = False
         
-        # Command categories and mappings
-        self.command_categories = {
-            "CORE": {
-                "SET", "GET", "DEL", "EXISTS", "EXPIRE"
-            },
-            "STRING": {
-                "APPEND", "STRLEN", "INCR", "DECR", 
-                "INCRBY", "DECRBY", "GETRANGE", "SETRANGE"
-            },
-            "LIST": {
-                "LPUSH", "RPUSH", "LPOP", "RPOP",
-                "LRANGE", "LINDEX", "LSET", "LLEN"
-            },
-            "SET": {
-                "SADD", "SREM", "SISMEMBER", "SMEMBERS",
-                "SINTER", "SUNION", "SDIFF"
-            },
-            "HASH": {
-                "HSET", "HGET", "HMSET", "HGETALL",
-                "HDEL", "HEXISTS"
-            },
-            "SORTED_SET": {
-                "ZADD", "ZRANGE", "ZRANK", "ZREM",
-                "ZRANGEBYSCORE"
-            },
-            "STREAM": {
-                "XADD", "XREAD", "XRANGE", "XLEN",
-                "XGROUP", "XREADGROUP", "XACK"
-            },
-            "JSON": {
-                "JSON.SET", "JSON.GET", "JSON.DEL",
-                "JSON.ARRAPPEND"
-            },
-            "GEOSPATIAL": {
-                "GEOADD", "GEOSEARCH", "GEODIST"
-            },
-            "BITMAP": {
-                "SETBIT", "GETBIT", "BITCOUNT", "BITOP"
-            },
-            "BITFIELD": {
-                "BITFIELD"
-            },
-            "HYPERLOGLOG": {
-                "PFADD", "PFCOUNT", "PFMERGE"
-            },
-            "TIMESERIES": {
-                "TS.CREATE", "TS.ADD", "TS.RANGE", "TS.GET"
-            },
-            "VECTOR": {
-                "VECTOR.ADD", "VECTOR.SEARCH", "VECTOR.OP"
-            },
-            "DOCUMENT": {
-                "DOC.INSERT", "DOC.FIND", "DOC.UPDATE",
-                "DOC.DELETE", "DOC.AGGREGATE"
-            },
-            "TRANSACTION": {
-                "MULTI", "EXEC", "DISCARD"
-            },
-            "PUBSUB": {
-                "SUBSCRIBE", "UNSUBSCRIBE", "PUBLISH"
-            },
-            "PERSISTENCE": {
-                "SAVE", "RESTORE"
-            }
+        self.handlers = {
+            "SET": self.server.strings.handle_command,
+            "GET": self.server.strings.handle_command,
+            "DEL": self.server.strings.handle_command,
+            "EXISTS": self.server.strings.handle_command,
+            "EXPIRE": self.server.strings.handle_command,
+            "LPUSH": self.server.lists.handle_command,
+            "RPUSH": self.server.lists.handle_command,
+            "LPOP": self.server.lists.handle_command,
+            "RPOP": self.server.lists.handle_command,
+            "SADD": self.server.sets.handle_command,
+            "SREM": self.server.sets.handle_command,
+            "SISMEMBER": self.server.sets.handle_command,
+            "SMEMBERS": self.server.sets.handle_command,
+            "HSET": self.server.hashes.handle_command,
+            "HGET": self.server.hashes.handle_command,
+            "ZADD": self.server.sorted_sets.handle_command,
+            "ZRANGE": self.server.sorted_sets.handle_command,
+            # Add other command mappings as needed
         }
 
-        # Create a flat command to handler mapping
-        self.command_handlers = {
-            cmd: self._get_handler_for_category(category)
-            for category, commands in self.command_categories.items()
-            for cmd in commands
-        }
+    def route(self, command, client_socket):
+        if not command:
+            return "ERR Empty command"
+
+        cmd = command[0].upper()
+        args = command[1:]
+
+        handler = self.handlers.get(cmd, None)
+        if handler:
+            return handler(cmd, self.server.data_store.store, *args)
+        else:
+            return "ERR Unknown command"
 
     def _get_handler_for_category(self, category):
         """Map category to corresponding handler method"""
@@ -121,19 +82,19 @@ class CommandRouter:
         logger.info(f"Routing command: {cmd} with args: {args}")
 
         # Handle transactions first
-        if self.in_transaction and cmd != "EXEC" and cmd != "DISCARD":
+        if self.in_transaction and cmd not in {"EXEC", "DISCARD"}:
             self.transaction_queue.append([cmd] + args)
             return "+QUEUED\r\n"
 
         # Get the appropriate handler for the command
-        handler = self.command_handlers.get(cmd)
+        handler = self.handlers.get(cmd)
         if handler:
             try:
                 return handler(cmd, args)
             except Exception as e:
                 logger.error(f"Error executing command {cmd}: {e}")
                 return f"-ERR {str(e)}\r\n"
-        
+
         return f"-ERR Unknown command '{cmd}'\r\n"
 
     def _handle_transaction(self, cmd, args):

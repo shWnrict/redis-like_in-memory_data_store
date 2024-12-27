@@ -88,6 +88,77 @@ class RESPProtocol:
         except Exception as e:
             return f"-ERR {str(e)}\r\n"
 
+    @staticmethod
+    def format_command(*args):
+        """
+        Format a single Redis command using RESP protocol.
+        """
+        command = f"*{len(args)}\r\n"
+        for arg in args:
+            if isinstance(arg, bytes):
+                arg = arg.decode('utf-8')
+            arg_str = str(arg)
+            command += f"${len(arg_str)}\r\n{arg_str}\r\n"
+        return command
+
+    @staticmethod
+    def format_bulk_commands(commands):
+        """
+        Format multiple Redis commands as a single RESP array.
+        """
+        bulk_command = ""
+        for cmd in commands:
+            bulk_command += RESPProtocol.format_command(*cmd)
+        return bulk_command
+
+    @staticmethod
+    def parse_response(response):
+        """
+        Parse a single Redis response.
+        """
+        if not response:
+            return None
+        prefix = response[0]
+        if prefix == '+':
+            return response[1:]
+        elif prefix == '-':
+            return f"ERR {response[1:]}"
+        elif prefix == ':':
+            return int(response[1:])
+        elif prefix == '$':
+            length = int(response[1:])
+            return response[2:] if length != -1 else None
+        elif prefix == '*':
+            items = []
+            lines = response.split('\r\n')
+            count = int(lines[0][1:])
+            for i in range(1, count + 1):
+                item = lines[i]
+                if item.startswith('$'):
+                    length = int(item[1:])
+                    items.append(lines[i + 1] if length != -1 else None)
+                    i += 2
+                else:
+                    items.append(item)
+            return items
+        else:
+            return response
+
+    @staticmethod
+    def parse_bulk_response(response):
+        """
+        Parse multiple RESP responses from a pipeline execution.
+        """
+        responses = []
+        while response:
+            resp, sep, rest = response.partition('\r\n')
+            if not sep:
+                break
+            parsed = RESPProtocol.parse_response(resp + '\r\n')
+            responses.append(parsed)
+            response = rest
+        return responses
+
 class ProtocolError(Exception):
     def __init__(self, message):
         super().__init__(f"RESP Protocol Error: {message}")
