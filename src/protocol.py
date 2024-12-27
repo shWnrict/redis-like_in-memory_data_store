@@ -3,74 +3,58 @@ import json
 
 class RESPProtocol:
     @staticmethod
-    def parse_message(data):
+    def parse_message(message: str):
+        """
+        Parse a RESP message and return a list of commands.
+        """
         commands = []
-        lines = data.split('\r\n')
-        i = 0
-        
-        while i < len(lines):
-            line = lines[i]
-            if not line:
-                i += 1
-                continue
-                
-            if line[0] == '*':
-                count = int(line[1:])
+        while message:
+            if message.startswith('*'):
+                # Array type
+                parts = message.split('\r\n')
+                array_length = int(parts[0][1:])
+                message = '\r\n'.join(parts[1:])
                 command = []
-                i += 1
-                
-                for _ in range(count):
-                    if i >= len(lines):
-                        raise ProtocolError("Incomplete command")
-                    
-                    bulk_len = lines[i]
-                    if not bulk_len.startswith('$'):
-                        raise ProtocolError("Expected bulk string marker")
-                    
-                    length = int(bulk_len[1:])
-                    i += 1
-                    
-                    if i >= len(lines):
-                        raise ProtocolError("Incomplete command")
-                    
-                    command.append(lines[i])
-                    i += 1
-                    
+                for _ in range(array_length):
+                    if message.startswith('$'):
+                        dollar_parts = message.split('\r\n', 2)
+                        length = int(dollar_parts[0][1:])
+                        value = dollar_parts[1]
+                        command.append(value)
+                        message = dollar_parts[2] if len(dollar_parts) > 2 else ''
                 commands.append(command)
             else:
-                i += 1
-                
+                break
         return commands
 
     @staticmethod
     def format_response(response):
-        if isinstance(response, list):
-            if all(isinstance(item, tuple) for item in response):
-                # Handle TimeSeries range responses
-                resp = f"*{len(response)}\r\n"
-                for ts, val in response:
-                    resp += f"*2\r\n:{ts}\r\n:{val}\r\n"
-                return resp
-            elif all(isinstance(item, list) for item in response):
-                # Handle Streams or JSON arrays
-                resp = f"*{len(response)}\r\n"
-                for sublist in response:
-                    resp += RESPProtocol.format_array(sublist)
-                return resp
+        """
+        Format a response string into RESP format.
+        """
+        if isinstance(response, str):
+            if response.startswith("-ERR"):
+                return f"-Error: {response[4:]}\r\n"
+            elif response.startswith("+OK"):
+                return f"+OK\r\n"
+            elif response.startswith(":"):
+                return f"{response}\r\n"
+            elif response.startswith("$"):
+                return f"{response}\r\n"
             else:
-                # Generic array
-                return RESPProtocol.format_array(response)
-        elif isinstance(response, dict):
-            # Serialize dictionary as JSON string
-            return f"${len(json.dumps(response))}\r\n{json.dumps(response)}\r\n"
-        elif response is None:
-            return "$-1\r\n"  # (nil)
-        elif isinstance(response, (int, float)):
+                return f"+{response}\r\n"
+        elif isinstance(response, int):
             return f":{response}\r\n"
-        elif isinstance(response, str):
-            return f"+{response}\r\n"
+        elif isinstance(response, list):
+            formatted = f"*{len(response)}\r\n"
+            for item in response:
+                if item is None:
+                    formatted += "$-1\r\n"
+                else:
+                    formatted += f"${len(str(item))}\r\n{item}\r\n"
+            return formatted
         else:
-            return f"+{str(response)}\r\n"
+            return "$-1\r\n"
 
     @staticmethod
     def _format_single_response(response):

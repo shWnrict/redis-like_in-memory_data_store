@@ -2,6 +2,9 @@
 import random
 from threading import Lock
 from src.core.data_store import KeyValueStore
+from src.logger import setup_logger  # Import setup_logger
+
+logger = setup_logger("keyspace_manager")  # Initialize logger
 
 class KeyspaceManager:
     """
@@ -20,7 +23,8 @@ class KeyspaceManager:
         with self.lock:
             if 0 <= db_index < len(self.databases):
                 self.current_db = db_index
-                return f"OK - Switched to database {db_index}"
+                logger.info(f"Switched to database {db_index}.")
+                return "OK"
             raise ValueError("Invalid database index.")
 
     def flushdb(self):
@@ -29,6 +33,7 @@ class KeyspaceManager:
         """
         with self.lock:
             self.databases[self.current_db] = KeyValueStore()  # Reset the current database
+            logger.info(f"Flushed database {self.current_db}.")
             return "OK"
 
     def randomkey(self):
@@ -38,7 +43,9 @@ class KeyspaceManager:
         with self.lock:
             keys = list(self.databases[self.current_db].store.keys())
             if keys:
-                return random.choice(keys)
+                random_key = random.choice(keys)
+                logger.info(f"Random key from database {self.current_db}: {random_key}")
+                return random_key
             return "(nil)"  # Align with Redis convention
 
     def get_current_store(self):
@@ -54,6 +61,7 @@ class KeyspaceManager:
         """
         with self.lock:
             self.databases.append(KeyValueStore())
+            logger.info(f"Added new database. Total databases: {len(self.databases)}.")
             return f"OK - Added database {len(self.databases) - 1}"
 
     def remove_database(self, db_index):
@@ -62,8 +70,9 @@ class KeyspaceManager:
         """
         with self.lock:
             if 0 <= db_index < len(self.databases):
-                if db_index == self.current_db:
-                    self.current_db = 0  # Reset to the first database if the current one is removed
                 del self.databases[db_index]
-                return f"OK - Removed database {db_index}"
+                logger.info(f"Removed database {db_index}. Total databases: {len(self.databases)}.")
+                if self.current_db >= len(self.databases):
+                    self.current_db = len(self.databases) - 1
+                return "OK"
             raise ValueError("Invalid database index.")

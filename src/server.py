@@ -44,6 +44,10 @@ from src.patterns.distributed_locks import DistributedLock
 from src.patterns.rate_limiter import RateLimiter
 from src.patterns.message_queue import MessageQueue
 
+from src.clustering.node import Node
+from src.clustering.replication import ReplicationManager
+from src.core.pipeline_manager import PipelineManager  # Import PipelineManager
+
 logger = setup_logger(level=Config.LOG_LEVEL)
 
 class Server:
@@ -60,7 +64,8 @@ class Server:
 
         # Initialize data store and managers
         self.data_store = DataStore()
-        self.memory_manager = MemoryManager()
+        self.memory_manager = MemoryManager(self.data_store)
+        self.memory_manager.start()
         self.expiry_manager = ExpiryManager(self.data_store)
         self.expiry_manager.start()  # Start ExpiryManager
         
@@ -100,22 +105,37 @@ class Server:
 
         # Initialize monitoring components
         self.stats = Stats(self.data_store)
-        self.slowlog = SlowLog(threshold_ms=100)  # Set threshold as needed
+        self.slowlog = SlowLog(threshold_ms=Config.SLOWLOG_THRESHOLD_MS)  # Use config for threshold
 
         # Initialize LuaEngine
         self.lua_engine = LuaEngine(self)
         logger.info("LuaEngine integrated into server.")
 
-        # Initialize clustering components
+        # Initialize clustering components with Config settings
         self.hash_slots = HashSlots()
         self.node_communication = NodeCommunication(Config.CLUSTER_HOST, Config.CLUSTER_PORT)
-        self.node_communication.connect()
+        self.node_communication.start()
         logger.info("Cluster mode initialized and node communication established.")
+
+        # Initialize ReplicationManager
+        self.replication_manager = ReplicationManager(self, self.node_communication)
+
+        # Example: Adding self as a node
+        self_node = Node(node_id=Config.CLUSTER_NODE_ID, host=self.host, port=self.port)
+        self.hash_slots.add_node(self_node)
+
+        # Connect to other nodes (example)
+        other_node = Node(node_id="127.0.0.1:7001", host="127.0.0.1", port=7001)
+        self.hash_slots.add_node(other_node)
+        self.node_communication.add_connection(other_node.node_id, other_node.host, other_node.port)
 
         # Initialize pattern handlers
         self.distributed_lock = DistributedLock(self.data_store)
-        self.rate_limiter = RateLimiter(self.data_store, max_requests=100, window_seconds=60)
+        self.rate_limiter = RateLimiter(self.data_store, max_requests=Config.RATE_LIMIT_MAX_REQUESTS, window_seconds=Config.RATE_LIMIT_WINDOW_SECONDS)
         self.message_queue = MessageQueue(self.data_store, queue_name='default')
+
+        # Initialize PipelineManager
+        self.pipeline_manager = PipelineManager(self.command_router)
 
         # Load data from persistence (only once)
         self._load_persistence_data()
@@ -126,9 +146,11 @@ class Server:
             # First load snapshot
             snapshot_data = self.snapshot.load()
             if snapshot_data and isinstance(snapshot_data, dict):
-                self.data_store.store = snapshot_data
+                with self.data_store.lock:
+                    self.data_store.store = snapshot_data
+                logger.info("Snapshot data loaded successfully.")
             else:
-                self.data_store.store = {}
+                logger.info("No snapshot data to load.")
         except Exception as e:
             logger.error(f"Error loading snapshot: {e}")
             self.data_store.store = {}
@@ -136,28 +158,17 @@ class Server:
         # Then replay AOF
         try:
             self.aof.replay(self._replay_command, self.data_store.store)
+            logger.info("AOF replayed successfully.")
         except Exception as e:
             logger.error(f"Error replaying AOF: {e}")
 
     def _replay_command(self, command):
         """Special handler for replaying commands from AOF"""
         try:
-            if isinstance(command, str):
-                parts = command.split()
-                cmd = parts[0].upper()
-                args = parts[1:]
-            else:
-                cmd = command[0].upper()
-                args = command[1:]
-
-            # Handle string commands directly during replay
-            if cmd in {"SET", "GET", "DEL", "EXISTS", "EXPIRE"}:
-                return self.strings.handle_command(cmd, self.data_store.store, *args)
-            
-            return self.process_command([cmd] + args)
+            self.command_router.route(command, None)
+            logger.debug(f"Replayed command from AOF: {command}")
         except Exception as e:
             logger.error(f"Error replaying command {command}: {e}")
-            return None
 
     def start(self):
         self.running = True
@@ -187,11 +198,14 @@ class Server:
                     client.close()
                 except:
                     pass
+            self.clients.clear()
         self.snapshot.save(self.data_store)  # Pass the DataStore object directly
         self.aof.truncate(self.data_store.store)
         self.expiry_manager.stop()  # Stop ExpiryManager
+        self.memory_manager.stop()  # Stop MemoryManager
         self.snapshot.stop()
         self.server_socket.close()
+        self.node_communication.stop()
         logger.info("Server stopped")
 
     def handle_client(self, client_socket):
@@ -209,33 +223,45 @@ class Server:
                         break
 
                     buffer += data
-                    if b"\r\n" not in buffer:
-                        continue
+                    while b"\r\n" in buffer:
+                        # Parse commands using RESPProtocol
+                        commands = RESPProtocol.parse_message(buffer.decode())
+                        if not commands:
+                            break
+                        for command in commands:
+                            cmd = command[0].upper()
 
-                    command_lists = RESPProtocol.parse_message(buffer.decode())
-                    for command in command_lists:
-                        cmd = command[0].upper()
-                        args = command[1:]
+                            # Handle transactions
+                            if self.transaction_manager.is_in_transaction(client_id):
+                                self.transaction_manager.queue_command(client_id, command)
+                                client_socket.sendall(b"+QUEUED\r\n")
+                                continue
 
-                        # Rate limiting
-                        if not self.rate_limiter.is_allowed(str(client_id)):
-                            response = "ERR Rate limit exceeded"
-                            client_socket.sendall(RESPProtocol.format_response(response).encode())
-                            continue
+                            # Handle pipeline commands
+                            if cmd == "PIPELINE":
+                                response = "+OK\r\n"
+                                client_socket.sendall(response.encode())
+                                continue
 
-                        key = command[1] if len(command) > 1 else None
-                        if key:
-                            forwarded_response = self.distribute_key(key)
-                            if forwarded_response:
-                                formatted_response = forwarded_response
+                            # Rate limiting
+                            if not self.rate_limiter.is_allowed(str(client_id)):
+                                response = "-ERR Rate limit exceeded\r\n"
+                                client_socket.sendall(response.encode())
+                                continue
+
+                            key = command[1] if len(command) > 1 else None
+                            if key:
+                                forwarded_response = self.distribute_key(key)
+                                if forwarded_response:
+                                    formatted_response = forwarded_response
+                                else:
+                                    response = self.command_router.route(command, client_socket)
+                                    formatted_response = RESPProtocol.format_response(response)
                             else:
                                 response = self.command_router.route(command, client_socket)
                                 formatted_response = RESPProtocol.format_response(response)
-                        else:
-                            response = self.command_router.route(command, client_socket)
-                            formatted_response = RESPProtocol.format_response(response)
-                        client_socket.sendall(formatted_response.encode())
-                    buffer = b""
+                            client_socket.sendall(formatted_response.encode())
+                        buffer = b""
 
                 except BlockingIOError:
                     continue
@@ -262,11 +288,14 @@ class Server:
 
     def handle_pubsub(self, cmd, args, client_socket):
         if cmd == "SUBSCRIBE":
-            return self.pubsub.subscribe(client_socket, args[0])
+            # ...existing code...
+            pass
         elif cmd == "UNSUBSCRIBE":
-            return self.pubsub.unsubscribe(client_socket, args[0] if args else None)
+            # ...existing code...
+            pass
         elif cmd == "PUBLISH":
-            return self.pubsub.publish(args[0], args[1])
+            # ...existing code...
+            pass
         return None
     
     def handle_transactions(self, cmd, args, client_socket):
@@ -274,19 +303,21 @@ class Server:
         client_id = id(client_socket)
             
         if cmd == "MULTI":
-            return self.transaction_manager.start_transaction(client_id)
+            self.transaction_manager.begin_transaction(client_id)
+            return "+OK\r\n"
         elif cmd == "EXEC":
-            return self.transaction_manager.execute_transaction(
-                client_id,
-                self.data_store.store,
-                lambda cmd, _: self._execute_transaction_command(cmd, client_socket)
-            )
+            commands = self.transaction_manager.get_transaction_commands(client_id)
+            responses = self.pipeline_manager.execute(client_socket)
+            self.transaction_manager.end_transaction(client_id)
+            formatted_responses = RESPProtocol.format_response(responses)
+            return formatted_responses
         elif cmd == "DISCARD":
-            return self.transaction_manager.discard_transaction(client_id)
-        elif client_id in self.transaction_manager.transactions:
-            full_cmd = f"{cmd} {' '.join(args)}" if args else cmd
-            return self.transaction_manager.queue_command(client_id, full_cmd)
-        
+            self.transaction_manager.discard_transaction(client_id)
+            return "+OK\r\n"
+        elif self.transaction_manager.is_in_transaction(client_id):
+            self.transaction_manager.queue_command(client_id, cmd)
+            return "+QUEUED\r\n"
+    
         return None
 
     def _execute_transaction_command(self, command, client_socket):
@@ -294,67 +325,41 @@ class Server:
         Execute a single command within a transaction without re-queuing it.
         """
         if isinstance(command, str):
-            parts = command.split()
-            cmd = parts[0].upper()
-            args = parts[1:]
+            parsed_command = RESPProtocol.parse_message(command)
+            if parsed_command:
+                command = parsed_command[0]
+            else:
+                return "-ERR Invalid command\r\n"
         else:
-            cmd = command[0].upper()
-            args = command[1:]
+            parsed_command = command
 
-        logger.info(f"Executing transaction command: {cmd} with args: {args} from client: {client_socket}")
-
-        handlers = [
-            self.handle_pubsub,
-            self.handle_persistence,
-            self.handle_general_commands,
-            self.handle_data_type_commands
-        ]
-
-        for handler in handlers:
-            result = handler(cmd, args, client_socket)
-            if result is not None:
-                return result
-
-        if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
-            return self.geospatial.handle_command(cmd, self.data_store.store, *args)
-        if cmd in {"SETBIT", "GETBIT", "BITCOUNT", "BITOP", "BITFIELD"}:
-            return self.bitfields.handle_command(cmd, self.data_store.store, *args)
-        if cmd in {"PFADD", "PFCOUNT", "PFMERGE", "BFADD", "BFEXISTS", "BF.RESERVE"}:
-            return self.probabilistic.handle_command(cmd, self.data_store.store, *args)
-        if cmd in {"TS.CREATE", "TS.ADD", "TS.GET", "TS.RANGE", "TS.QUERYINDEX"}:
-            return self.timeseries.handle_command(cmd, self.data_store.store, *args)
-
-        logger.error(f"Unknown command: {cmd}")
-        return "ERR Unknown command"
+        logger.info(f"Executing transaction command: {command} from client: {client_socket}")
+        response = self.command_router.route(command, client_socket)
+        return RESPProtocol.format_response(response)
 
     def handle_persistence(self, cmd, args, client_socket):
         if cmd == "SAVE":
-            return self.snapshot.save(self.data_store)  # Pass the DataStore object directly
+            self.snapshot.save(self.data_store)
+            return "+OK\r\n"
         elif cmd == "RESTORE":
-            self.data_store.store = self.snapshot.load()
-            return "OK"
+            # Implement RESTORE logic
+            return "-ERR RESTORE not implemented\r\n"
 
         if cmd in {"SET", "DEL", "HSET", "LPUSH", "RPUSH", "ZADD", "GEOADD", "PFADD", "TS.ADD", "DOC.INSERT"}:
-            result = self.process_command([cmd] + args, client_socket)
-            if not result.startswith("ERR"):
-                self.aof.log_command(cmd + " " + " ".join(args))
-                self.changes_since_snapshot += 1
-
-                if self.changes_since_snapshot >= self.snapshot_threshold:
-                    self.snapshot.save(self.data_store)  # Pass the DataStore object directly
-                    self.aof.truncate(self.data_store.store)
-                    self.changes_since_snapshot = 0
+            self.aof.append(cmd, args)
+            return None
 
         return None
 
     def handle_general_commands(self, cmd, args, client_socket):
         if cmd == "SAVE":
-            return self.snapshot.save(self.data_store)  # Pass the DataStore object directly
+            self.snapshot.save(self.data_store)
+            return "+OK\r\n"
         elif cmd == "RESTORE":
-            self.data_store.store = self.snapshot.load()
-            return "OK"
+            # Implement RESTORE logic
+            return "-ERR RESTORE not implemented\r\n"
         elif cmd == "INFO":
-            return self.stats.handle_info()
+            return self.command_router.handle_info(cmd, args)
         return None
 
     def handle_data_type_commands(self, cmd, args, client_socket):
@@ -376,12 +381,12 @@ class Server:
         }
 
         if cmd in {"SET", "GET", "DEL", "EXISTS", "EXPIRE"}:
-            return self.strings.handle_command(cmd, self.data_store.store, *args)
+            handler = data_type_handlers["STRINGS"]
+            return handler.handle_command(cmd, self.data_store.store, *args)
 
         for data_type, handler in data_type_handlers.items():
-            if hasattr(handler, cmd.lower()):
-                method = getattr(handler, cmd.lower())
-                return method(self.data_store.store, *args)
+            if cmd.startswith(data_type):
+                return handler.handle_command(cmd, self.data_store.store, *args)
 
         return None
 
@@ -390,22 +395,29 @@ class Server:
         Get the client socket by client ID.
         """
         with self.clients_lock:
-            for client_socket in self.clients:
-                if id(client_socket) == client_id:
-                    return client_socket
+            for client in self.clients:
+                if id(client) == client_id:
+                    return client
         return None
 
-    def distribute_key(self, key):
+    def distribute_key(self, key: str) -> str:
         """
         Determine the node responsible for the given key and forward the command if necessary.
         """
         node = self.hash_slots.get_node(key)
-        if node and node != f"{self.host}:{self.port}":
-            message = RESPProtocol.format_command("FORWARD", key, f"{self.host}:{self.port}")
-            self.node_communication.send_message(message)
-            response = self.node_communication.receive_message()
-            return response
-        return None
+        if node and node.node_id != f"{self.host}:{self.port}":
+            connection = self.node_communication.get_connection(node.node_id)
+            if connection:
+                command = RESPProtocol.format_command(*[key])
+                try:
+                    connection.send_command_raw(command)
+                    response = connection.read_response()
+                    logger.debug(f"Forwarded command to {node.node_id}: {command.strip()}")
+                    return response
+                except ConnectionError as e:
+                    logger.error(f"Failed to forward command to {node.node_id}: {e}")
+                    return "-ERR Failed to forward command\r\n"
+        return ""
 
 if __name__ == "__main__":
     server = Server()

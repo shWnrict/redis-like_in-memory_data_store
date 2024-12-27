@@ -89,87 +89,6 @@ class CommandRouter:
         else:
             return "ERR Unknown command"
 
-    def _get_handler_for_category(self, category):
-        """Map category to corresponding handler method"""
-        category_handlers = {
-            "CORE": lambda cmd, args: self.server.strings.handle_command(cmd, self.server.data_store.store, *args),
-            "STRING": lambda cmd, args: self.server.strings.handle_command(cmd, self.server.data_store.store, *args),
-            "LIST": lambda cmd, args: self.server.lists.handle_command(cmd, self.server.data_store.store, *args),
-            "SET": lambda cmd, args: self.server.sets.handle_command(cmd, self.server.data_store.store, *args),
-            "HASH": lambda cmd, args: self.server.hashes.handle_command(cmd, self.server.data_store.store, *args),
-            "SORTED_SET": lambda cmd, args: self.server.sorted_sets.handle_command(cmd, self.server.data_store.store, *args),
-            "STREAM": lambda cmd, args: self.server.streams.handle_command(cmd, self.server.data_store.store, *args),
-            "JSON": lambda cmd, args: self.server.json_type.handle_command(cmd, self.server.data_store.store, *args),
-            "GEOSPATIAL": lambda cmd, args: self.server.geospatial.handle_command(cmd, self.server.data_store.store, *args),
-            "BITMAP": lambda cmd, args: self.server.bitmaps.handle_command(cmd, self.server.data_store.store, *args),
-            "BITFIELD": lambda cmd, args: self.server.bitfields.handle_command(cmd, self.server.data_store.store, *args),
-            "HYPERLOGLOG": lambda cmd, args: self.server.hyperloglogs.handle_command(cmd, self.server.data_store.store, *args),
-            "TIMESERIES": lambda cmd, args: self.server.timeseries.handle_command(cmd, self.server.data_store.store, *args),
-            "VECTOR": lambda cmd, args: self.server.vectors.handle_command(cmd, self.server.data_store.store, *args),
-            "DOCUMENT": lambda cmd, args: self.server.documents.handle_command(cmd, self.server.data_store.store, *args),
-            "TRANSACTION": lambda cmd, args: self._handle_transaction(cmd, args),
-            "PUBSUB": lambda cmd, args: self.server.handle_pubsub(cmd, args, None),
-            "PERSISTENCE": lambda cmd, args: self.server.handle_persistence(cmd, args, None)
-        }
-        return category_handlers.get(category)
-
-    def route_command(self, command_parts):
-        """Route the parsed command to the corresponding handler"""
-        if not command_parts:
-            return "-ERR Empty command\r\n"
-
-        cmd = command_parts[0].upper()
-        args = command_parts[1:]
-
-        logger.info(f"Routing command: {cmd} with args: {args}")
-
-        # Handle transactions first
-        if self.in_transaction and cmd not in {"EXEC", "DISCARD"}:
-            self.transaction_queue.append([cmd] + args)
-            return "+QUEUED\r\n"
-
-        # Get the appropriate handler for the command
-        handler = self.handlers.get(cmd)
-        if handler:
-            try:
-                response = handler(cmd, args)
-                # If response is a string without RESP formatting, format it
-                if not response.endswith("\r\n"):
-                    response = RESPProtocol.format_response(response)
-                return response
-            except Exception as e:
-                logger.error(f"Error executing command {cmd}: {e}")
-                return f"-ERR {str(e)}\r\n"
-
-        return f"-ERR Unknown command '{cmd}'\r\n"
-
-    def _handle_transaction(self, cmd, args):
-        """Handle transaction-related commands"""
-        if cmd == "MULTI":
-            self.in_transaction = True
-            return "+OK\r\n"
-        elif cmd == "EXEC":
-            if not self.in_transaction:
-                return "-ERR No transaction started\r\n"
-            return self._execute_transaction()
-        elif cmd == "DISCARD":
-            self.transaction_queue.clear()
-            self.in_transaction = False
-            return "+OK\r\n"
-        return "-ERR Unknown transaction command\r\n"
-
-    def _execute_transaction(self):
-        """Execute all commands in the transaction queue"""
-        results = []
-        try:
-            for cmd in self.transaction_queue:
-                result = self.server.process_command(cmd)
-                results.append(result)
-        finally:
-            self.transaction_queue.clear()
-            self.in_transaction = False
-        return f"*{len(results)}\r\n{''.join(results)}"
-
     def handle_info(self, cmd, args):
         """
         Handle the INFO command to provide server statistics.
@@ -203,64 +122,6 @@ class CommandRouter:
         result = self.expiry_manager.handle_persist(key)
         return f":{result}\r\n"
 
-    def handle_select(self, cmd, args):
-        if len(args) != 1:
-            return "-ERR wrong number of arguments for 'SELECT' command\r\n"
-        try:
-            db_index = int(args[0])
-            return self.keyspace_manager.select(db_index)
-        except ValueError:
-            return "-ERR invalid database index\r\n"
-
-    def handle_flushdb(self, cmd, args):
-        if len(args) != 0:
-            return "-ERR wrong number of arguments for 'FLUSHDB' command\r\n"
-        return self.keyspace_manager.flushdb()
-
-    def handle_randomkey(self, cmd, args):
-        if len(args) != 0:
-            return "-ERR wrong number of arguments for 'RANDOMKEY' command\r\n"
-        key = self.keyspace_manager.randomkey()
-        key = self.keyspace_manager.randomkey()
-        if key == "(nil)":
-            return "$-1\r\n"
-        return RESPProtocol.format_response(key)
-
-    def handle_eval(self, cmd, args):
-        """
-        Handle the EVAL command to execute Lua scripts.
-        EVAL script numkeys key [key ...] arg [arg ...]
-        """
-        if len(args) < 2:
-            return "ERR wrong number of arguments for 'EVAL' command"
-
-        script = args[0]
-        try:
-            numkeys = int(args[1])
-        except ValueError:
-            return "ERR numkeys must be an integer"
-
-        if len(args) < 2 + numkeys:
-            return "ERR not enough arguments for 'EVAL' command"
-
-        keys = args[2:2+numkeys]
-        arguments = args[2+numkeys:]
-
-        result = self.lua_engine.execute_script(script, keys, arguments)
-        return RESPProtocol.format_response(result)
-    
-    def handle_evalsha(self, cmd, args):
-        """
-        Handle the EVALSHA command to execute cached Lua scripts by SHA1 hash.
-        """
-        return "ERR EVALSHA not implemented yet"
-
-    def handle_command(self, cmd, store, *args):
-        if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
-            return self.server.geospatial.handle_command(cmd, store, *args)
-        # ...existing command handlers...
-        return "ERR Unknown command"
-
     def handle_lock(self, cmd, args):
         """
         Handle the LOCK command to acquire a distributed lock.
@@ -275,7 +136,7 @@ class CommandRouter:
             return "ERR TTL must be an integer"
 
         success = self.distributed_lock.acquire(lock_name, ttl)
-        return "OK" if success else "ERR Failed to acquire lock"
+        return "OK\r\n" if success else "ERR Failed to acquire lock\r\n"
 
     def handle_unlock(self, cmd, args):
         """
@@ -286,7 +147,7 @@ class CommandRouter:
             return "ERR wrong number of arguments for 'UNLOCK' command"
         lock_name = args[0]
         success = self.distributed_lock.release(lock_name)
-        return "OK" if success else "ERR Failed to release lock"
+        return "OK\r\n" if success else "ERR Failed to release lock\r\n"
 
     def handle_rate_limit(self, cmd, args):
         """
@@ -297,7 +158,7 @@ class CommandRouter:
             return "ERR wrong number of arguments for 'RATE.LIMIT' command"
         client_id = args[0]
         allowed = self.rate_limiter.is_allowed(client_id)
-        return "OK" if allowed else "ERR Rate limit exceeded"
+        return "OK\r\n" if allowed else "ERR Rate limit exceeded\r\n"
 
     def handle_mq_push(self, cmd, args):
         """
@@ -309,7 +170,7 @@ class CommandRouter:
         queue_name, message = args
         mq = MessageQueue(self.server.data_store, queue_name)
         mq.enqueue(message)
-        return "OK"
+        return "+OK\r\n"
 
     def handle_mq_pop(self, cmd, args):
         """
@@ -335,12 +196,61 @@ class CommandRouter:
         message = mq.peek()
         return RESPProtocol.format_response(message)
 
-    def route(self, command, client_socket):
-        # ...existing routing logic...
-        cmd = command[0].upper()
-        args = command[1:]
-        handler = self.handlers.get(cmd)
-        if handler:
-            return handler(cmd, args)
-        # ...existing handlers...
-        return "ERR Unknown command"
+    def handle_eval(self, cmd, args):
+        """
+        Handle the EVAL command to execute Lua scripts.
+        EVAL script numkeys key [key ...] arg [arg ...]
+        """
+        if len(args) < 2:
+            return "-ERR wrong number of arguments for 'EVAL' command\r\n"
+
+        script = args[0]
+        try:
+            numkeys = int(args[1])
+        except ValueError:
+            return "-ERR numkeys must be an integer\r\n"
+
+        if len(args) < 2 + numkeys:
+            return "-ERR not enough arguments for 'EVAL' command\r\n"
+
+        keys = args[2:2+numkeys]
+        arguments = args[2+numkeys:]
+
+        result = self.lua_engine.execute_script(script, keys, arguments)
+        return RESPProtocol.format_response(result)
+
+    def handle_evalsha(self, cmd, args):
+        """
+        Handle the EVALSHA command to execute cached Lua scripts by SHA1 hash.
+        EVALSHA sha1 numkeys key [key ...] arg [arg ...]
+        """
+        if len(args) < 2:
+            return "-ERR wrong number of arguments for 'EVALSHA' command\r\n"
+
+        sha1 = args[0]
+        try:
+            numkeys = int(args[1])
+        except ValueError:
+            return "-ERR numkeys must be an integer\r\n"
+
+        if len(args) < 2 + numkeys:
+            return "-ERR not enough arguments for 'EVALSHA' command\r\n"
+
+        keys = args[2:2+numkeys]
+        arguments = args[2+numkeys:]
+
+        # Retrieve the script by SHA1 hash (implementation depends on script caching mechanism)
+        script = self.server.lua_engine.get_script_by_sha1(sha1)
+        if not script:
+            return "-ERR No script found with the given SHA1 hash\r\n"
+
+        result = self.lua_engine.execute_script(script, keys, arguments)
+        return RESPProtocol.format_response(result)
+
+    def evict_keys_if_needed(self):
+        """
+        Check memory usage and trigger eviction if necessary.
+        """
+        current_memory = self.server.memory_manager.get_current_memory()
+        if current_memory > self.server.memory_manager.max_memory:
+            self.server.memory_manager.evict_keys()

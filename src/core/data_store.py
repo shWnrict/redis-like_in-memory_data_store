@@ -5,6 +5,7 @@ from src.logger import setup_logger
 from src.config import Config
 from typing import Dict, Any
 from src.pubsub.publisher import PubSubPublisher  # Import PubSubPublisher
+import psutil
 
 logger = setup_logger("data_store", level=Config.LOG_LEVEL)
 
@@ -44,11 +45,14 @@ class DataStore:
                 self.publisher.publish_invalidation(key)
             return result
 
-    def _exceeds_memory_threshold(self):
-        # Dummy example check
-        MAX_MEMORY = 1024 * 1024  # 1 MB for illustration
-        current_usage = sum(len(str(v)) for v in self.store.values())
-        return current_usage > MAX_MEMORY
+    def _exceeds_memory_threshold(self) -> bool:
+        """
+        Check if the current memory usage exceeds the maximum allowed memory.
+        """
+        process = psutil.Process()
+        current_memory = process.memory_info().rss  # in bytes
+        logger.debug(f"DataStore current memory usage: {current_memory} bytes.")
+        return current_memory > Config.MAX_MEMORY
 
     def get(self, key):
         """

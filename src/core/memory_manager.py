@@ -1,53 +1,48 @@
 # src/core/memory_manager.py
-from src.config import Config
 import threading
+import psutil
+from src.logger import setup_logger
+from src.config import Config
 import time
-import sys
+
+logger = setup_logger("memory_manager")
 
 class MemoryManager:
-    def __init__(self):
-        self.max_memory = Config.DATA_LIMIT
-        self.current_memory = 0
-        self.gc_threshold = 0.8 * self.max_memory  # 80% threshold
-        self.lock = threading.Lock()
-        self._start_gc_thread()
+    def __init__(self, data_store):
+        self.data_store = data_store
+        self.max_memory = Config.MAX_MEMORY  # Maximum memory in bytes
+        self.monitor_interval = Config.MONITOR_INTERVAL  # Interval in seconds
+        self.running = False
+        self.thread = threading.Thread(target=self.monitor_memory)
+        self.thread.daemon = True
 
-    def _start_gc_thread(self):
-        def gc_routine():
-            while True:
-                if self.current_memory > self.gc_threshold:
-                    self._collect_garbage()
-                time.sleep(60)  # Check every minute
-                
-        threading.Thread(target=gc_routine, daemon=True).start()
+    def start(self):
+        self.running = True
+        self.thread.start()
+        logger.info("MemoryManager started.")
 
-    def _collect_garbage(self):
-        with self.lock:
-            # Remove expired keys first
-            self._remove_expired()
-            # If still above threshold, remove least recently used
-            if self.current_memory > self.gc_threshold:
-                self._remove_lru()
+    def stop(self):
+        self.running = False
+        self.thread.join()
+        logger.info("MemoryManager stopped.")
 
-    def calculate_size(self, value):
-        return sys.getsizeof(value)
+    def monitor_memory(self):
+        while self.running:
+            current_memory = psutil.Process().memory_info().rss
+            logger.debug(f"Current memory usage: {current_memory} bytes.")
+            if current_memory > self.max_memory:
+                logger.warning("Memory limit exceeded. Initiating eviction.")
+                self.evict_keys()
+            time.sleep(self.monitor_interval)
 
-    def can_store(self, value):
-        return self.current_memory + self.calculate_size(value) <= self.max_memory
-
-    def add(self, value):
-        size = self.calculate_size(value)
-        if not self.can_store(value):
-            raise MemoryError("Not enough memory to store the value")
-        self.current_memory += size
-
-    def remove(self, value):
-        self.current_memory -= self.calculate_size(value)
-
-    def _remove_expired(self):
-        # Placeholder for removing expired keys
-        pass
-
-    def _remove_lru(self):
-        # Placeholder for removing least recently used keys
-        pass
+    def evict_keys(self):
+        """
+        Evict keys based on the configured eviction policy.
+        """
+        eviction_policy = Config.EVICTION_POLICY
+        if eviction_policy == "LRU":
+            self.data_store.evict_lru()
+        elif eviction_policy == "LFU":
+            self.data_store.evict_lfu()
+        else:
+            logger.error(f"Unknown eviction policy: {eviction_policy}")
