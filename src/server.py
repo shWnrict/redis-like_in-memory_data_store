@@ -213,6 +213,9 @@ class Server:
                 if result is not None:
                     return result
 
+            if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
+                return self.geospatial.handle_command(cmd, self.data_store.store, *args)
+
             logger.error(f"Unknown command: {cmd}")
             return "ERR Unknown command"
         except Exception as e:

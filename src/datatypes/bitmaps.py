@@ -21,6 +21,10 @@ class Bitmaps:
             try:
                 offset = int(offset)
                 value = int(value)
+                if offset < 0 or offset >= 2**32:
+                    return "ERR offset is out of range"
+                if value not in {0, 1}:
+                    return "ERR value must be 0 or 1"
             except ValueError:
                 return "ERR offset or value is not an integer"
 
@@ -49,6 +53,8 @@ class Bitmaps:
 
             try:
                 offset = int(offset)
+                if offset < 0 or offset >= 2**32:
+                    return "ERR offset is out of range"
             except ValueError:
                 return "ERR offset is not an integer"
 
@@ -62,7 +68,7 @@ class Bitmaps:
             logger.info(f"GETBIT {key} {offset} -> {bit}")
             return bit
 
-    def bitcount(self, store, key, start=None, end=None):
+    def bitcount(self, store, key, start=None, end=None, mode="BYTE"):
         """
         Counts the number of set bits (1s) in the string.
         """
@@ -71,15 +77,33 @@ class Bitmaps:
                 return 0
 
             try:
-                start = int(start) if start is not None else 0
-                end = int(end) if end is not None else len(store[key]) - 1
+                if mode == "BIT":
+                    start = int(start) if start is not None else 0
+                    end = int(end) if end is not None else len(store[key]) * 8 - 1
+                else:
+                    start = int(start) if start is not None else 0
+                    end = int(end) if end is not None else len(store[key]) - 1
+
+                if start < 0:
+                    start += len(store[key]) * (8 if mode == "BIT" else 1)
+                if end < 0:
+                    end += len(store[key]) * (8 if mode == "BIT" else 1)
             except ValueError:
                 return "ERR start or end is not an integer"
 
             count = 0
-            for byte in store[key][start:end + 1]:
-                count += bin(ord(byte)).count("1")
-            logger.info(f"BITCOUNT {key} [{start}:{end}] -> {count}")
+            if mode == "BIT":
+                for bit_offset in range(start, end + 1):
+                    byte_index = bit_offset // 8
+                    bit_index = bit_offset % 8
+                    if byte_index < len(store[key]):
+                        byte = ord(store[key][byte_index])
+                        count += (byte >> (7 - bit_index)) & 1
+            else:
+                for byte in store[key][start:end + 1]:
+                    count += bin(ord(byte)).count("1")
+
+            logger.info(f"BITCOUNT {key} [{start}:{end}] {mode} -> {count}")
             return count
 
     def bitop(self, store, operation, destkey, *sourcekeys):
@@ -125,3 +149,16 @@ class Bitmaps:
             store[destkey] = "".join(result)
             logger.info(f"BITOP {operation} {destkey} -> Success")
             return len(store[destkey])
+
+    def get(self, store, key):
+        """
+        Get the string value of a key.
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], str):
+                return ""
+            value = store[key]
+            # Convert null bytes to an empty string
+            if value == "\x00":
+                return ""
+            return value
