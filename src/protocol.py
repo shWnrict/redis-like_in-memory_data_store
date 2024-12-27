@@ -1,4 +1,6 @@
 # src/protocol.py
+import json
+
 class RESPProtocol:
     @staticmethod
     def parse_message(data):
@@ -75,6 +77,12 @@ class RESPProtocol:
                     return "+OK\r\n"
                 else:
                     return f"${len(response)}\r\n{response}\r\n"
+            elif isinstance(response, (list, dict)):
+                # Serialize the data structure to JSON without additional quotes
+                json_str = json.dumps(response, ensure_ascii=False, separators=(',', ':'))
+                return f"${len(json_str)}\r\n{json_str}\r\n"
+            elif isinstance(response, tuple):
+                return RESPProtocol.format_response(list(response))
             else:
                 raise ValueError(f"Unsupported response type: {type(response)}")
         except Exception as e:

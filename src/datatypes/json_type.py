@@ -34,73 +34,94 @@ class JSONType:
 
         return current, None
 
+    def _get_value_at_path(self, data, path):
+        if path == ".":
+            return data
+        
+        keys = path.strip(".").split(".")
+        current = data
+        
+        for key in keys:
+            if not isinstance(current, dict) or key not in current:
+                return None
+            current = current[key]
+        return current
+
     def json_set(self, store, key, path, value):
-        """
-        Sets a JSON value at the specified path.
-        """
         with self.lock:
-            if key not in store:
-                store[key] = {}
-            if not isinstance(store[key], dict):
-                return "ERR Key is not a JSON object"
-
-            current, error = self._navigate_to_path(store, key, path)
-            if error:
-                return error
-
             try:
                 value = json.loads(value)
             except json.JSONDecodeError:
-                pass  # Assume the value is a primitive
+                return "ERR Invalid JSON value"
 
-            current[path.split(".")[-1]] = value
-            logger.info(f"JSON.SET {key} {path} -> {value}")
+            if path == ".":
+                store[key] = value
+                return "OK"
+
+            if key not in store:
+                store[key] = {}
+            
+            current = store[key]
+            keys = path.strip(".").split(".")
+            
+            for k in keys[:-1]:
+                if k not in current:
+                    current[k] = {}
+                current = current[k]
+            
+            current[keys[-1]] = value
             return "OK"
 
     def json_get(self, store, key, path):
-        """
-        Retrieves a JSON value at the specified path.
-        """
-        with self.lock:
-            current, error = self._navigate_to_path(store, key, path)
-            if error:
-                return error
-
-            target_key = path.split(".")[-1]
-            if target_key not in current:
-                return "(nil)"
-
-            value = current[target_key]
-            logger.info(f"JSON.GET {key} {path} -> {value}")
-            return json.dumps(value)
+        if key not in store:
+            return None  # Changed from "(nil)"
+        
+        value = self._get_value_at_path(store[key], path)
+        if value is None:
+            return None  # Changed from "(nil)"
+            
+        return value
 
     def json_del(self, store, key, path):
-        """
-        Deletes a JSON value at the specified path.
-        """
-        with self.lock:
-            current, error = self._navigate_to_path(store, key, path)
-            if error:
-                return error
-
-            target_key = path.split(".")[-1]
-            if target_key in current:
-                del current[target_key]
-                logger.info(f"JSON.DEL {key} {path}")
-                return 1
+        if key not in store:
             return 0
 
-    def json_arrappend(self, store, key, path, *values):
-        """
-        Appends values to an array at the specified path.
-        """
-        with self.lock:
-            current, error = self._navigate_to_path(store, key, path)
-            if error:
-                return error
+        if path == ".":
+            del store[key]
+            return 1
 
-            target_key = path.split(".")[-1]
-            if target_key not in current or not isinstance(current[target_key], list):
+        keys = path.strip(".").split(".")
+        current = store[key]
+        
+        for k in keys[:-1]:
+            if not isinstance(current, dict) or k not in current:
+                return 0
+            current = current[k]
+
+        if not isinstance(current, dict) or keys[-1] not in current:
+            return 0
+            
+        del current[keys[-1]]
+        return 1
+
+    def json_arrappend(self, store, key, path, *values):
+        with self.lock:
+            if key not in store:
+                store[key] = {}
+
+            # If path doesn't exist, create an empty array
+            keys = path.strip(".").split(".")
+            current = store[key]
+            
+            for k in keys[:-1]:
+                if k not in current:
+                    current[k] = {}
+                current = current[k]
+                
+            last_key = keys[-1]
+            if last_key not in current:
+                current[last_key] = []
+            elif not isinstance(current[last_key], list):
                 return "ERR Path does not point to an array"
 
             try:
@@ -108,6 +129,16 @@ class JSONType:
             except json.JSONDecodeError:
                 return "ERR Values must be JSON serializable"
 
-            current[target_key].extend(parsed_values)
-            logger.info(f"JSON.ARRAPPEND {key} {path} -> {parsed_values}")
-            return len(current[target_key])
+            current[last_key].extend(parsed_values)
+            return len(current[last_key])
+        
+    def handle_command(self, cmd, store, *args):
+        if cmd == "JSON.SET":
+            return self.json_set(store, args[0], args[1], args[2])
+        elif cmd == "JSON.GET":
+            return self.json_get(store, args[0], args[1])
+        elif cmd == "JSON.DEL":
+            return self.json_del(store, args[0], args[1])
+        elif cmd == "JSON.ARRAPPEND":
+            return self.json_arrappend(store, args[0], args[1], *args[2:])
+        return "ERR Unknown command"

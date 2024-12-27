@@ -22,16 +22,21 @@ class Hashes:
             logger.info(f"HSET {key} {field} -> {value}")
             return 1 if new_field else 0
 
-    def hmset(self, store, key, field_value_pairs):
+    def hmset(self, store, key, *field_value_pairs):
         """
         Sets multiple fields in the hash stored at the key.
         """
+        if len(field_value_pairs) % 2 != 0:
+            return "ERR Invalid number of arguments for HMSET"
+        
         with self.lock:
             if key not in store:
                 store[key] = {}
             if not isinstance(store[key], dict):
                 return "ERR Key is not a hash"
-            for field, value in field_value_pairs.items():
+            for i in range(0, len(field_value_pairs), 2):
+                field = field_value_pairs[i]
+                value = field_value_pairs[i + 1]
                 store[key][field] = value
             logger.info(f"HMSET {key} -> {field_value_pairs}")
             return "OK"
@@ -54,7 +59,10 @@ class Hashes:
         with self.lock:
             if key not in store or not isinstance(store[key], dict):
                 return "(nil)"
-            items = list(store[key].items())
+            items = []
+            for field, value in store[key].items():
+                items.append(field)
+                items.append(value)
             logger.info(f"HGETALL {key} -> {items}")
             return items
 
@@ -83,3 +91,18 @@ class Hashes:
             exists = 1 if field in store[key] else 0
             logger.info(f"HEXISTS {key} {field} -> {exists}")
             return exists
+
+    def handle_command(self, cmd, store, *args):
+        if cmd == "HSET":
+            return self.hset(store, args[0], args[1], args[2])
+        elif cmd == "HMSET":
+            return self.hmset(store, args[0], *args[1:])
+        elif cmd == "HGET":
+            return self.hget(store, args[0], args[1])
+        elif cmd == "HGETALL":
+            return self.hgetall(store, args[0])
+        elif cmd == "HDEL":
+            return self.hdel(store, args[0], *args[1:])
+        elif cmd == "HEXISTS":
+            return self.hexists(store, args[0], args[1])
+        return "ERR Unknown command"
