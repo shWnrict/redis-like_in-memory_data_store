@@ -38,6 +38,7 @@ class AOF:
                     # Handle strings and other simple types
                     commands.append(f"SET {key} {value}")
 
+            # Clear the file before writing new commands
             with open(self.file_path, "w") as f:
                 for cmd in commands:
                     f.write(cmd + "\n")
