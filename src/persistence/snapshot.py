@@ -31,7 +31,7 @@ class Snapshot:
         try:
             # Convert the data store to a serializable format
             serializable_data = {}
-            for key, value in data_store.items():
+            for key, value in data_store.store.items():  # Access the internal store dictionary
                 # Convert complex types to a serializable format
                 if isinstance(value, (dict, list, str, int, float, bool)):
                     serializable_data[key] = value

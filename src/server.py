@@ -72,7 +72,7 @@ class Server:
         self.aof = AOF()
         self.snapshot = Snapshot(self.data_store)
         self.transaction_manager = TransactionManager()
-        self.pubsub = PubSub()
+        self.pubsub = PubSub(self)  # Pass the server instance to PubSub
         self.command_router = CommandRouter(self)
         
         # Initialize persistence state
@@ -146,13 +146,13 @@ class Server:
                     client.close()
                 except:
                     pass
-        self.snapshot.save(self.data_store.store)
+        self.snapshot.save(self.data_store)  # Pass the DataStore object directly
         self.snapshot.stop()
         self.server_socket.close()
         logger.info("Server stopped")
 
     def handle_client(self, client_socket):
-        client_id = id(threading.current_thread())  # Generate unique client ID
+        client_id = id(client_socket)  # Use client socket object as client ID
         
         with self.clients_lock:
             self.clients.add(client_socket)
@@ -170,7 +170,7 @@ class Server:
                         continue
 
                     command_lists = RESPProtocol.parse_message(buffer.decode())
-                    response = self.process_command(command_lists[0], client_id)  # Pass client_id
+                    response = self.process_command(command_lists[0], client_socket)  # Pass client_socket
                     formatted_response = RESPProtocol.format_response(response)
                     client_socket.send(formatted_response.encode())
                     buffer = b""
@@ -184,7 +184,7 @@ class Server:
                 self.clients.remove(client_socket)
             client_socket.close()
             
-    def process_command(self, command, client_id=None):
+    def process_command(self, command, client_socket=None):
         try:
             if not command:
                 return "ERR Empty command"
@@ -203,7 +203,7 @@ class Server:
                     cmd = command[0].upper()
                     args = command[1:]
 
-            logger.info(f"Processing command: {cmd} with args: {args} from client: {client_id}")
+            logger.info(f"Processing command: {cmd} with args: {args} from client: {client_socket}")
 
             handlers = [
                 self.handle_pubsub,
@@ -214,7 +214,7 @@ class Server:
             ]
 
             for handler in handlers:
-                result = handler(cmd, args, client_id)
+                result = handler(cmd, args, client_socket)
                 if result is not None:
                     return result
 
@@ -233,19 +233,18 @@ class Server:
             logger.error(f"Command processing error: {e}")
             return "ERR Invalid Command"
 
-    def handle_pubsub(self, cmd, args, client_id):
+    def handle_pubsub(self, cmd, args, client_socket):
         if cmd == "SUBSCRIBE":
-            return self.pubsub.subscribe(client_id, args[0])
+            return self.pubsub.subscribe(client_socket, args[0])
         elif cmd == "UNSUBSCRIBE":
-            return self.pubsub.unsubscribe(client_id, args[0] if args else None)
+            return self.pubsub.unsubscribe(client_socket, args[0] if args else None)
         elif cmd == "PUBLISH":
-            return str(self.pubsub.publish(args[0], args[1]))
+            return self.pubsub.publish(args[0], args[1])
         return None
     
-    def handle_transactions(self, cmd, args, client_id):
+    def handle_transactions(self, cmd, args, client_socket):
         """Handle transaction-related commands"""
-        if not client_id:
-            client_id = id(threading.current_thread())  # Use thread ID as client ID if none provided
+        client_id = id(client_socket)
             
         if cmd == "MULTI":
             return self.transaction_manager.start_transaction(client_id)
@@ -253,7 +252,7 @@ class Server:
             return self.transaction_manager.execute_transaction(
                 client_id,
                 self.data_store.store,
-                lambda cmd, _: self._execute_transaction_command(cmd, client_id)
+                lambda cmd, _: self._execute_transaction_command(cmd, client_socket)
             )
         elif cmd == "DISCARD":
             return self.transaction_manager.discard_transaction(client_id)
@@ -263,7 +262,7 @@ class Server:
         
         return None
 
-    def _execute_transaction_command(self, command, client_id):
+    def _execute_transaction_command(self, command, client_socket):
         """
         Execute a single command within a transaction without re-queuing it.
         """
@@ -275,7 +274,7 @@ class Server:
             cmd = command[0].upper()
             args = command[1:]
 
-        logger.info(f"Executing transaction command: {cmd} with args: {args} from client: {client_id}")
+        logger.info(f"Executing transaction command: {cmd} with args: {args} from client: {client_socket}")
 
         handlers = [
             self.handle_pubsub,
@@ -285,7 +284,7 @@ class Server:
         ]
 
         for handler in handlers:
-            result = handler(cmd, args, client_id)
+            result = handler(cmd, args, client_socket)
             if result is not None:
                 return result
 
@@ -301,35 +300,35 @@ class Server:
         logger.error(f"Unknown command: {cmd}")
         return "ERR Unknown command"
 
-    def handle_persistence(self, cmd, args, client_id):
+    def handle_persistence(self, cmd, args, client_socket):
         if cmd == "SAVE":
-            return self.snapshot.save(self.data_store.store)
+            return self.snapshot.save(self.data_store)  # Pass the DataStore object directly
         elif cmd == "RESTORE":
             self.data_store.store = self.snapshot.load()
             return "OK"
 
         if cmd in {"SET", "DEL", "HSET", "LPUSH", "RPUSH", "ZADD", "GEOADD", "PFADD", "TS.ADD", "DOC.INSERT"}:
-            result = self.process_command([cmd] + args, client_id)
+            result = self.process_command([cmd] + args, client_socket)
             if not result.startswith("ERR"):
                 self.aof.log_command(cmd + " " + " ".join(args))
                 self.changes_since_snapshot += 1
 
                 if self.changes_since_snapshot >= self.snapshot_threshold:
-                    self.snapshot.save(self.data_store.store)
+                    self.snapshot.save(self.data_store)  # Pass the DataStore object directly
                     self.aof.truncate(self.data_store.store)
                     self.changes_since_snapshot = 0
 
         return None
 
-    def handle_general_commands(self, cmd, args, client_id):
+    def handle_general_commands(self, cmd, args, client_socket):
         if cmd == "SAVE":
-            return self.snapshot.save(self.data_store.store)
+            return self.snapshot.save(self.data_store)  # Pass the DataStore object directly
         elif cmd == "RESTORE":
             self.data_store.store = self.snapshot.load()
             return "OK"
         return None
 
-    def handle_data_type_commands(self, cmd, args, client_id):
+    def handle_data_type_commands(self, cmd, args, client_socket):
         data_type_handlers = {
             "STRINGS": self.strings,
             "LISTS": self.lists,
@@ -355,6 +354,16 @@ class Server:
                 method = getattr(handler, cmd.lower())
                 return method(self.data_store.store, *args)
 
+        return None
+
+    def get_client_socket(self, client_id):
+        """
+        Get the client socket by client ID.
+        """
+        with self.clients_lock:
+            for client_socket in self.clients:
+                if id(client_socket) == client_id:
+                    return client_socket
         return None
 
 if __name__ == "__main__":

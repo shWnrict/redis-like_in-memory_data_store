@@ -1,91 +1,191 @@
-# src/pubsub/publisher.py
 from src.logger import setup_logger
 import threading
+from src.protocol import RESPProtocol
+from collections import defaultdict
+from typing import Dict, Set, Optional, List, Union
+import socket
 
 logger = setup_logger("pubsub")
 
 class PubSub:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.channels = {}
-        self.patterns = {}
+    def __init__(self, server):
+        self.server = server
+        self.lock = threading.RLock()  # Using RLock instead of Lock for nested lock acquisition
+        self.channels: Dict[str, Set[socket.socket]] = defaultdict(set)  # Channel -> Set of client sockets
+        self.client_channels: Dict[socket.socket, Set[str]] = defaultdict(set)  # Client socket -> Set of subscribed channels
+        self.patterns: Dict[str, Set[socket.socket]] = defaultdict(set)  # Pattern -> Set of client sockets
+        self.subscribed_clients: Set[socket.socket] = set()  # Set of all subscribed client sockets
 
-    def subscribe(self, client_id, channel):
+    def subscribe(self, client_socket: socket.socket, channel: str) -> List[Union[str, int]]:
         """
         Subscribe a client to a channel.
+        
+        Args:
+            client_socket: The client's socket object
+            channel: The channel name to subscribe to
+            
+        Returns:
+            List containing [action, channel, subscriber_count]
         """
         with self.lock:
-            if channel not in self.channels:
-                self.channels[channel] = set()
-            self.channels[channel].add(client_id)
-            logger.info(f"SUBSCRIBE: Client {client_id} subscribed to channel {channel}")
-            return f"Subscribed to {channel}"
+            try:
+                # Add client to channel subscribers
+                if client_socket not in self.channels[channel]:
+                    self.channels[channel].add(client_socket)
+                    # Track client's subscribed channels
+                    self.client_channels[client_socket].add(channel)
+                    self.subscribed_clients.add(client_socket)
+                    
+                    subscriber_count = len(self.channels[channel])
+                    logger.info(f"Client {client_socket} subscribed to channel {channel}. Total subscribers: {subscriber_count}")
+                    
+                    # Send subscription confirmation to client
+                    response = ["subscribe", channel, subscriber_count]
+                    self._send_message_to_client(client_socket, response)
+                    
+                    return response
+                else:
+                    logger.info(f"Client {client_socket} is already subscribed to channel {channel}")
+                    return ["subscribe", channel, len(self.channels[channel])]
+            except Exception as e:
+                logger.error(f"Error in subscribe: {e}")
+                return ["error", f"Failed to subscribe: {str(e)}"]
 
-    def psubscribe(self, client_id, pattern):
+    def unsubscribe(self, client_socket: socket.socket, channel: Optional[str] = None) -> List[Union[str, int]]:
         """
-        Subscribe a client to a pattern.
-        """
-        with self.lock:
-            if pattern not in self.patterns:
-                self.patterns[pattern] = set()
-            self.patterns[pattern].add(client_id)
-            logger.info(f"PSUBSCRIBE: Client {client_id} subscribed to pattern {pattern}")
-            return f"psubscribed to {pattern}"
-
-    def unsubscribe(self, client_id, channel=None):
-        """
-        Unsubscribe a client from a channel or all channels.
+        Unsubscribe a client from a specific channel or all channels.
+        
+        Args:
+            client_socket: The client's socket object
+            channel: Optional channel name. If None, unsubscribe from all channels
+            
+        Returns:
+            List containing [action, channel(s), remaining_subscriptions]
         """
         with self.lock:
-            if channel:
-                if channel in self.channels and client_id in self.channels[channel]:
-                    self.channels[channel].remove(client_id)
-                    if not self.channels[channel]:  # Remove empty channels
-                        del self.channels[channel]
-                    logger.info(f"UNSUBSCRIBE: Client {client_id} unsubscribed from {channel}")
-                    return f"Unsubscribed from {channel}"
-            else:
-                unsubscribed_channels = []
-                for ch, clients in list(self.channels.items()):
-                    if client_id in clients:
-                        clients.remove(client_id)
-                        unsubscribed_channels.append(ch)
-                        if not clients:  # Remove empty channels
+            try:
+                if channel:
+                    # Unsubscribe from specific channel
+                    if channel in self.channels:
+                        self.channels[channel].discard(client_socket)
+                        self.client_channels[client_socket].discard(channel)
+                        
+                        # Clean up empty channel
+                        if not self.channels[channel]:
+                            del self.channels[channel]
+                        
+                        remaining = len(self.client_channels[client_socket])
+                        logger.info(f"Client {client_socket} unsubscribed from {channel}. Remaining subscriptions: {remaining}")
+                        return ["unsubscribe", channel, remaining]
+                else:
+                    # Unsubscribe from all channels
+                    unsubscribed = list(self.client_channels[client_socket])
+                    for ch in unsubscribed:
+                        self.channels[ch].discard(client_socket)
+                        if not self.channels[ch]:
                             del self.channels[ch]
-                logger.info(f"UNSUBSCRIBE: Client {client_id} unsubscribed from all channels")
-                return f"Unsubscribed from {', '.join(unsubscribed_channels)}" if unsubscribed_channels else "No subscriptions"
+                    
+                    self.client_channels[client_socket].clear()
+                    self.subscribed_clients.discard(client_socket)
+                    
+                    logger.info(f"Client {client_socket} unsubscribed from all channels: {unsubscribed}")
+                    return ["unsubscribe", unsubscribed, 0]
+                    
+            except Exception as e:
+                logger.error(f"Error in unsubscribe: {e}")
+                return ["error", f"Failed to unsubscribe: {str(e)}"]
 
-    def publish(self, channel, message):
+    def publish(self, channel: str, message: str) -> int:
         """
         Publish a message to all subscribers of a channel.
+        
+        Args:
+            channel: The channel to publish to
+            message: The message to publish
+            
+        Returns:
+            Number of clients that received the message
         """
         with self.lock:
-            if channel not in self.channels:
-                logger.info(f"PUBLISH: No subscribers for channel {channel}")
+            try:
+                if channel not in self.channels:
+                    logger.info(f"No subscribers for channel {channel}")
+                    return 0
+
+                message_data = ["message", channel, message]
+                active_subscribers = set()
+                failed_clients = set()
+
+                # Send message to all channel subscribers
+                for client_socket in self.channels[channel]:
+                    if self._send_message_to_client(client_socket, message_data):
+                        active_subscribers.add(client_socket)
+                    else:
+                        failed_clients.add(client_socket)
+                        logger.warning(f"Failed to send message to client {client_socket}, marking for cleanup")
+
+                # Clean up failed clients
+                self._cleanup_failed_clients(failed_clients)
+
+                logger.info(f"Published message to {len(active_subscribers)} subscribers on channel {channel}")
+                return len(active_subscribers)
+
+            except Exception as e:
+                logger.error(f"Error in publish: {e}")
                 return 0
-            subscribers = self.channels[channel]
-            for client_id in subscribers:
-                self.__send_message(client_id, channel, message)
-            logger.info(f"PUBLISH: Sent message to {len(subscribers)} subscribers on {channel}")
+
+    def _send_message_to_client(self, client_socket: socket.socket, message: List[Union[str, int]]) -> bool:
+        """
+        Send a message to a specific client.
+        
+        Args:
+            client_socket: The client's socket object
+            message: The message to send
             
-            # Match patterns
-            total_subscribers = len(subscribers)
-            for pattern, subs in self.patterns.items():
-                if self._matches(pattern, channel):
-                    for client_id in subs:
-                        self.__send_message(client_id, channel, message)
-                    total_subscribers += len(subs)
-            return total_subscribers
+        Returns:
+            bool indicating if the message was sent successfully
+        """
+        try:
+            formatted_message = RESPProtocol.format_response(message)
+            client_socket.sendall(formatted_message.encode())
+            logger.debug(f"Message sent to client {client_socket}: {message}")
+            return True
 
-    def _matches(self, pattern, channel):
-        """
-        Simple wildcard matching, adapt as needed.
-        """
-        return True if pattern in channel else False
+        except Exception as e:
+            logger.error(f"Failed to send message to client {client_socket}: {e}")
+            return False
 
-    def __send_message(self, client_id, channel, message):
+    def _cleanup_failed_clients(self, failed_clients: Set[socket.socket]) -> None:
         """
-        Send a message to a subscriber (mock implementation).
+        Clean up state for clients that failed to receive messages.
+        
+        Args:
+            failed_clients: Set of client sockets that failed to receive messages
         """
-        # Replace this with actual client communication logic.
-        logger.info(f"Message sent to Client {client_id} on {channel}: {message}")
+        with self.lock:
+            for client_socket in failed_clients:
+                # Remove client from all their subscribed channels
+                subscribed_channels = self.client_channels.get(client_socket, set())
+                for channel in subscribed_channels:
+                    self.channels[channel].discard(client_socket)
+                    if not self.channels[channel]:
+                        del self.channels[channel]
+                
+                # Clean up client state
+                self.client_channels.pop(client_socket, None)
+                self.subscribed_clients.discard(client_socket)
+                
+                logger.info(f"Cleaned up state for failed client {client_socket}")
+
+    def get_client_subscriptions(self, client_socket: socket.socket) -> Set[str]:
+        """
+        Get all channels a client is subscribed to.
+        
+        Args:
+            client_socket: The client's socket object
+            
+        Returns:
+            Set of channel names
+        """
+        with self.lock:
+            return self.client_channels.get(client_socket, set()).copy()

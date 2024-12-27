@@ -12,6 +12,8 @@ class TransactionManager:
         """
         Start a new transaction for the given client.
         """
+        if not client_id:
+            return "ERR Invalid client ID"
         if client_id in self.transactions:
             return "ERR Transaction already in progress"
         self.transactions[client_id] = []
