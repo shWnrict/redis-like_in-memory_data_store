@@ -70,7 +70,7 @@ class Server:
 
         # Initialize persistence and transaction components
         self.aof = AOF()
-        self.snapshot = Snapshot()
+        self.snapshot = Snapshot(self.data_store)
         self.transaction_manager = TransactionManager()
         self.pubsub = PubSub()
         self.command_router = CommandRouter(self)
@@ -127,6 +127,9 @@ class Server:
         self.server_socket.listen(self.max_clients)
         logger.info(f"Server started on {self.host}:{self.port}")
 
+        # Start periodic snapshot saving
+        self.snapshot.start()
+
         while self.running:
             try:
                 client_socket, _ = self.server_socket.accept()
@@ -144,6 +147,7 @@ class Server:
                 except:
                     pass
         self.snapshot.save(self.data_store.store)
+        self.snapshot.stop()
         self.server_socket.close()
         logger.info("Server stopped")
 

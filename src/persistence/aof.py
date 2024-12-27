@@ -1,6 +1,7 @@
 # src/persistence/aof.py
 import os
 from src.logger import setup_logger
+from src.protocol import RESPProtocol
 
 logger = setup_logger("aof")
 
@@ -71,7 +72,9 @@ class AOF:
             self.logging_enabled = False  # Disable logging during replay
 
             with open(self.file_path, "r") as f:
-                commands = [line.strip() for line in f if line.strip()]
+                data = f.read()
+                
+            commands = RESPProtocol.parse_message(data)
                 
             # Process all commands in a single pass
             for command in commands:

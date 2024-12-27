@@ -2,11 +2,12 @@
 import threading
 import time
 from src.logger import setup_logger
+from src.config import Config
 
 logger = setup_logger("expiry_manager")
 
 class ExpiryManager:
-    def __init__(self, store, cleanup_interval=1):
+    def __init__(self, store, cleanup_interval=Config.CLEANUP_INTERVAL):
         self.expiry = {}
         self.store = store
         self.lock = threading.Lock()

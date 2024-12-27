@@ -8,3 +8,5 @@ class Config:
     TIMEOUT = 60  # Timeout in seconds
     RETRY_ATTEMPTS = 3  # Number of retry attempts
     BACKUP_PATH = "/var/backups"  # Path to store backups
+    SAVE_INTERVAL = 300  # Interval in seconds for periodic snapshot saving
+    CLEANUP_INTERVAL = 1  # Interval in seconds for cleaning up expired keys
