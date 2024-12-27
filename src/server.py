@@ -26,7 +26,7 @@ from src.datatypes.bitmaps import Bitmaps
 from src.datatypes.bitfields import Bitfields
 
 from src.datatypes.geospatial import Geospatial
-from src.datatypes.probabilistic import HyperLogLog
+from src.datatypes.probabilistic import HyperLogLog, BloomFilter
 from src.datatypes.timeseries import TimeSeries
 
 from src.datatypes.vectors import Vectors
@@ -66,6 +66,7 @@ class Server:
         self.timeseries = TimeSeries()
         self.vectors = Vectors()
         self.documents = Documents()
+        self.probabilistic = BloomFilter()
 
         # Initialize persistence and transaction components
         self.aof = AOF()
@@ -215,6 +216,10 @@ class Server:
 
             if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
                 return self.geospatial.handle_command(cmd, self.data_store.store, *args)
+            if cmd in {"SETBIT", "GETBIT", "BITCOUNT", "BITOP", "BITFIELD"}:
+                return self.bitfields.handle_command(cmd, self.data_store.store, *args)
+            if cmd in {"PFADD", "PFCOUNT", "PFMERGE", "BFADD", "BFEXISTS", "BF.RESERVE"}:
+                return self.probabilistic.handle_command(cmd, self.data_store.store, *args)
 
             logger.error(f"Unknown command: {cmd}")
             return "ERR Unknown command"
