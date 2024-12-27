@@ -2,6 +2,7 @@
 from src.logger import setup_logger
 import threading
 import math
+import geohash2  # Ensure you have the geohash2 library installed
 
 logger = setup_logger("geospatial")
 
@@ -37,6 +38,8 @@ class Geospatial:
             return self.geodist(store, *args)
         elif cmd == "GEOSEARCH":
             return self.geosearch(store, *args)
+        elif cmd == "GEOHASH":
+            return self.geohash(store, *args)
         return "ERR Unknown geospatial command"
 
     def geoadd(self, store, key, *args):
@@ -228,3 +231,23 @@ class Geospatial:
                 final_result.append(entry)
 
             return final_result
+
+    def geohash(self, store, key, *members):
+        """
+        Return Geohash strings for the specified members.
+        GEOHASH key member [member ...]
+        """
+        with self.lock:
+            if key not in store or not isinstance(store[key], dict):
+                return "ERR Key is not a geospatial index"
+
+            result = []
+            for member in members:
+                if member not in store[key]:
+                    result.append(None)
+                else:
+                    lat, lon = store[key][member]
+                    geohash_str = geohash2.encode(lat, lon)
+                    result.append(geohash_str)
+
+            return result
