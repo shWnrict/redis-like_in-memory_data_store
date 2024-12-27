@@ -220,6 +220,8 @@ class Server:
                 return self.bitfields.handle_command(cmd, self.data_store.store, *args)
             if cmd in {"PFADD", "PFCOUNT", "PFMERGE", "BFADD", "BFEXISTS", "BF.RESERVE"}:
                 return self.probabilistic.handle_command(cmd, self.data_store.store, *args)
+            if cmd in {"TS.CREATE", "TS.ADD", "TS.GET", "TS.RANGE", "TS.QUERYINDEX"}:
+                return self.timeseries.handle_command(cmd, self.data_store.store, *args)
 
             logger.error(f"Unknown command: {cmd}")
             return "ERR Unknown command"
