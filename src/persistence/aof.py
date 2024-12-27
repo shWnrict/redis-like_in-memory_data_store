@@ -7,14 +7,27 @@ logger = setup_logger("aof")
 class AOF:
     def __init__(self, file_path="appendonly.aof"):
         self.file_path = file_path
+        self.logging_enabled = True
 
     def log_command(self, command):
+        if not self.logging_enabled:
+            return
         try:
             with open(self.file_path, "a") as f:
-                f.write(command + "\n")
+                f.write(self._format_command(command) + "\n")
             logger.info(f"AOF: Logged command -> {command}")
         except Exception as e:
             logger.error(f"AOF: Failed to log command -> {command}, Error: {e}")
+
+    def _format_command(self, command):
+        """
+        Format the command in RESP format for AOF.
+        """
+        parts = command.split()
+        formatted = f"*{len(parts)}\r\n"
+        for part in parts:
+            formatted += f"${len(part)}\r\n{part}\r\n"
+        return formatted
 
     def truncate(self, snapshot_data):
         try:
@@ -41,7 +54,7 @@ class AOF:
             # Clear the file before writing new commands
             with open(self.file_path, "w") as f:
                 for cmd in commands:
-                    f.write(cmd + "\n")
+                    f.write(self._format_command(cmd) + "\n")
             logger.info("AOF: File truncated with snapshot data")
         except Exception as e:
             logger.error(f"AOF: Failed to truncate: {e}")
@@ -54,6 +67,8 @@ class AOF:
             if not os.path.exists(self.file_path):
                 logger.warning("AOF: No AOF file found, starting fresh")
                 return
+
+            self.logging_enabled = False  # Disable logging during replay
 
             with open(self.file_path, "r") as f:
                 commands = [line.strip() for line in f if line.strip()]
@@ -69,3 +84,5 @@ class AOF:
             logger.info("AOF: Replay completed successfully")
         except Exception as e:
             logger.error(f"AOF: Replay failed, Error: {e}")
+        finally:
+            self.logging_enabled = True  # Re-enable logging after replay

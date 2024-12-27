@@ -249,7 +249,7 @@ class Server:
             return self.transaction_manager.execute_transaction(
                 client_id,
                 self.data_store.store,
-                lambda cmd, _: self.process_command(cmd, client_id)
+                lambda cmd, _: self._execute_transaction_command(cmd, client_id)
             )
         elif cmd == "DISCARD":
             return self.transaction_manager.discard_transaction(client_id)
@@ -259,6 +259,44 @@ class Server:
         
         return None
 
+    def _execute_transaction_command(self, command, client_id):
+        """
+        Execute a single command within a transaction without re-queuing it.
+        """
+        if isinstance(command, str):
+            parts = command.split()
+            cmd = parts[0].upper()
+            args = parts[1:]
+        else:
+            cmd = command[0].upper()
+            args = command[1:]
+
+        logger.info(f"Executing transaction command: {cmd} with args: {args} from client: {client_id}")
+
+        handlers = [
+            self.handle_pubsub,
+            self.handle_persistence,
+            self.handle_general_commands,
+            self.handle_data_type_commands
+        ]
+
+        for handler in handlers:
+            result = handler(cmd, args, client_id)
+            if result is not None:
+                return result
+
+        if cmd in {"GEOADD", "GEODIST", "GEOSEARCH", "GEOHASH"}:
+            return self.geospatial.handle_command(cmd, self.data_store.store, *args)
+        if cmd in {"SETBIT", "GETBIT", "BITCOUNT", "BITOP", "BITFIELD"}:
+            return self.bitfields.handle_command(cmd, self.data_store.store, *args)
+        if cmd in {"PFADD", "PFCOUNT", "PFMERGE", "BFADD", "BFEXISTS", "BF.RESERVE"}:
+            return self.probabilistic.handle_command(cmd, self.data_store.store, *args)
+        if cmd in {"TS.CREATE", "TS.ADD", "TS.GET", "TS.RANGE", "TS.QUERYINDEX"}:
+            return self.timeseries.handle_command(cmd, self.data_store.store, *args)
+
+        logger.error(f"Unknown command: {cmd}")
+        return "ERR Unknown command"
+
     def handle_persistence(self, cmd, args, client_id):
         if cmd == "SAVE":
             return self.snapshot.save(self.data_store.store)
@@ -267,13 +305,15 @@ class Server:
             return "OK"
 
         if cmd in {"SET", "DEL", "HSET", "LPUSH", "RPUSH", "ZADD", "GEOADD", "PFADD", "TS.ADD", "DOC.INSERT"}:
-            self.aof.log_command(cmd + " " + " ".join(args))
-            self.changes_since_snapshot += 1
+            result = self.process_command([cmd] + args, client_id)
+            if not result.startswith("ERR"):
+                self.aof.log_command(cmd + " " + " ".join(args))
+                self.changes_since_snapshot += 1
 
-            if self.changes_since_snapshot >= self.snapshot_threshold:
-                self.snapshot.save(self.data_store.store)
-                self.aof.truncate(self.data_store.store)
-                self.changes_since_snapshot = 0
+                if self.changes_since_snapshot >= self.snapshot_threshold:
+                    self.snapshot.save(self.data_store.store)
+                    self.aof.truncate(self.data_store.store)
+                    self.changes_since_snapshot = 0
 
         return None
 
