@@ -28,28 +28,21 @@ class PubSub:
             List containing [action, channel, subscriber_count]
         """
         with self.lock:
-            try:
-                # Add client to channel subscribers
-                if client_socket not in self.channels[channel]:
-                    self.channels[channel].add(client_socket)
-                    # Track client's subscribed channels
-                    self.client_channels[client_socket].add(channel)
-                    self.subscribed_clients.add(client_socket)
-                    
-                    subscriber_count = len(self.channels[channel])
-                    logger.info(f"Client {client_socket} subscribed to channel {channel}. Total subscribers: {subscriber_count}")
-                    
-                    # Send subscription confirmation to client
-                    response = ["subscribe", channel, subscriber_count]
-                    self._send_message_to_client(client_socket, response)
-                    
-                    return response
-                else:
-                    logger.info(f"Client {client_socket} is already subscribed to channel {channel}")
-                    return ["subscribe", channel, len(self.channels[channel])]
-            except Exception as e:
-                logger.error(f"Error in subscribe: {e}")
-                return ["error", f"Failed to subscribe: {str(e)}"]
+            if client_socket not in self.channels[channel]:
+                self.channels[channel].add(client_socket)
+                self.client_channels[client_socket].add(channel)
+                self.subscribed_clients.add(client_socket)
+                
+                subscriber_count = len(self.channels[channel])
+                logger.info(f"Client {client_socket} subscribed to channel {channel}. Total subscribers: {subscriber_count}")
+                
+                response = ["subscribe", channel, subscriber_count]
+                self._send_message_to_client(client_socket, response)
+                
+                return response
+            else:
+                logger.info(f"Client {client_socket} is already subscribed to channel {channel}")
+                return ["subscribe", channel, len(self.channels[channel])]
 
     def unsubscribe(self, client_socket: socket.socket, channel: Optional[str] = None) -> List[Union[str, int]]:
         """
@@ -63,37 +56,33 @@ class PubSub:
             List containing [action, channel(s), remaining_subscriptions]
         """
         with self.lock:
-            try:
-                if channel:
-                    # Unsubscribe from specific channel
-                    if channel in self.channels:
-                        self.channels[channel].discard(client_socket)
-                        self.client_channels[client_socket].discard(channel)
-                        
-                        # Clean up empty channel
-                        if not self.channels[channel]:
-                            del self.channels[channel]
-                        
-                        remaining = len(self.client_channels[client_socket])
-                        logger.info(f"Client {client_socket} unsubscribed from {channel}. Remaining subscriptions: {remaining}")
-                        return ["unsubscribe", channel, remaining]
-                else:
-                    # Unsubscribe from all channels
-                    unsubscribed = list(self.client_channels[client_socket])
-                    for ch in unsubscribed:
-                        self.channels[ch].discard(client_socket)
-                        if not self.channels[ch]:
-                            del self.channels[ch]
+            if channel:
+                if channel in self.channels:
+                    self.channels[channel].discard(client_socket)
+                    self.client_channels[client_socket].discard(channel)
                     
-                    self.client_channels[client_socket].clear()
-                    self.subscribed_clients.discard(client_socket)
+                    if not self.channels[channel]:
+                        del self.channels[channel]
                     
-                    logger.info(f"Client {client_socket} unsubscribed from all channels: {unsubscribed}")
-                    return ["unsubscribe", unsubscribed, 0]
-                    
-            except Exception as e:
-                logger.error(f"Error in unsubscribe: {e}")
-                return ["error", f"Failed to unsubscribe: {str(e)}"]
+                    remaining = len(self.client_channels[client_socket])
+                    logger.info(f"Client {client_socket} unsubscribed from {channel}. Remaining subscriptions: {remaining}")
+                    response = ["unsubscribe", channel, remaining]
+                    self._send_message_to_client(client_socket, response)
+                    return response
+            else:
+                unsubscribed = list(self.client_channels[client_socket])
+                for ch in unsubscribed:
+                    self.channels[ch].discard(client_socket)
+                    if not self.channels[ch]:
+                        del self.channels[ch]
+                
+                self.client_channels[client_socket].clear()
+                self.subscribed_clients.discard(client_socket)
+                
+                logger.info(f"Client {client_socket} unsubscribed from all channels: {unsubscribed}")
+                response = ["unsubscribe", unsubscribed, 0]
+                self._send_message_to_client(client_socket, response)
+                return response
 
     def publish(self, channel: str, message: str) -> int:
         """
@@ -107,32 +96,25 @@ class PubSub:
             Number of clients that received the message
         """
         with self.lock:
-            try:
-                if channel not in self.channels:
-                    logger.info(f"No subscribers for channel {channel}")
-                    return 0
-
-                message_data = ["message", channel, message]
-                active_subscribers = set()
-                failed_clients = set()
-
-                # Send message to all channel subscribers
-                for client_socket in self.channels[channel]:
-                    if self._send_message_to_client(client_socket, message_data):
-                        active_subscribers.add(client_socket)
-                    else:
-                        failed_clients.add(client_socket)
-                        logger.warning(f"Failed to send message to client {client_socket}, marking for cleanup")
-
-                # Clean up failed clients
-                self._cleanup_failed_clients(failed_clients)
-
-                logger.info(f"Published message to {len(active_subscribers)} subscribers on channel {channel}")
-                return len(active_subscribers)
-
-            except Exception as e:
-                logger.error(f"Error in publish: {e}")
+            if channel not in self.channels:
+                logger.info(f"No subscribers for channel {channel}")
                 return 0
+
+            message_data = ["message", channel, message]
+            active_subscribers = set()
+            failed_clients = set()
+
+            for client_socket in self.channels[channel]:
+                if self._send_message_to_client(client_socket, message_data):
+                    active_subscribers.add(client_socket)
+                else:
+                    failed_clients.add(client_socket)
+                    logger.warning(f"Failed to send message to client {client_socket}, marking for cleanup")
+
+            self._cleanup_failed_clients(failed_clients)
+
+            logger.info(f"Published message to {len(active_subscribers)} subscribers on channel {channel}")
+            return len(active_subscribers)
 
     def _send_message_to_client(self, client_socket: socket.socket, message: List[Union[str, int]]) -> bool:
         """
@@ -150,7 +132,6 @@ class PubSub:
             client_socket.sendall(formatted_message.encode())
             logger.debug(f"Message sent to client {client_socket}: {message}")
             return True
-
         except Exception as e:
             logger.error(f"Failed to send message to client {client_socket}: {e}")
             return False
@@ -164,14 +145,12 @@ class PubSub:
         """
         with self.lock:
             for client_socket in failed_clients:
-                # Remove client from all their subscribed channels
                 subscribed_channels = self.client_channels.get(client_socket, set())
                 for channel in subscribed_channels:
                     self.channels[channel].discard(client_socket)
                     if not self.channels[channel]:
                         del self.channels[channel]
                 
-                # Clean up client state
                 self.client_channels.pop(client_socket, None)
                 self.subscribed_clients.discard(client_socket)
                 
