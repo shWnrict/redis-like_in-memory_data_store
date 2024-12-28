@@ -4,6 +4,9 @@ import socket
 import select
 from core.database import KeyValueStore
 from protocol import parse_resp, format_resp
+from commands.core_handler import CoreCommandHandler
+from commands.string_handler import StringCommandHandler
+from commands.transaction_handler import TransactionCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -12,31 +15,23 @@ class TCPServer:
         self.db = KeyValueStore()
         self.server_socket = None
         self.shutting_down = False
-        self.socket_timeout = 0.1  # Reduced timeout for faster response
-        self.command_map = {
-            "SET": self.set_command,
-            "GET": self.get_command,
-            "DEL": self.del_command,
-            "EXISTS": self.exists_command,
-            # Expiration commands   
-            "EXPIRE": self.expire_command,
-            "TTL": self.ttl_command,
-            "PERSIST": self.persist_command,
-            # Transaction commands
-            "MULTI": self.multi_command,
-            "EXEC": self.exec_command,
-            "DISCARD": self.discard_command,
-            # String-specific commands
-            "APPEND": self.append_command,
-            "STRLEN": self.strlen_command,
-            "INCR": self.incr_command,
-            "DECR": self.decr_command,
-            "INCRBY": self.incrby_command,
-            "DECRBY": self.decrby_command,
-            "GETRANGE": self.getrange_command,
-            "SETRANGE": self.setrange_command,
-        }
-        self.active_clients = set()  # Track active client connections
+        self.socket_timeout = 0.1
+        self.active_clients = set()
+
+        # Initialize command handlers
+        self.command_map = {}
+        self._init_command_handlers()
+
+    def _init_command_handlers(self):
+        """Initialize all command handlers and build command map."""
+        handlers = [
+            CoreCommandHandler(self.db),
+            StringCommandHandler(self.db),
+            TransactionCommandHandler(self.db),
+        ]
+        
+        for handler in handlers:
+            self.command_map.update(handler.get_commands())
 
     def start(self):
         print(f"Server started on {self.host}:{self.port}")
@@ -140,66 +135,5 @@ class TCPServer:
         if command in self.command_map:
             return self.command_map[command](client_id, *args)
         return f"ERROR: Unknown command {command}"
-
-    # Core operations
-    def set_command(self, client_id, key, value):
-        self.db.set(key, value)
-        return "OK"
-
-    def get_command(self, client_id, key):
-        value = self.db.get(key)
-        return value if value else "(nil)"
-
-    def del_command(self, client_id, key):
-        return "(1)" if self.db.delete(key) else "(0)"
-
-    def exists_command(self, client_id, key):
-        return "(1)" if self.db.exists(key) else "(0)"
-
-    # Expiration commands
-    def expire_command(self, client_id, key, ttl):
-        return "(1)" if self.db.expiry_manager.set_expiry(key, int(ttl)) else "(0)"
-
-    def ttl_command(self, client_id, key):
-        return str(self.db.expiry_manager.ttl(key))
-
-    def persist_command(self, client_id, key):
-        return "(1)" if self.db.expiry_manager.persist(key) else "(0)"
-    
-    # Transaction commands
-    def multi_command(self, client_id):
-        return self.db.transaction_manager.start_transaction(client_id) or "OK"
-
-    def exec_command(self, client_id):
-        results = self.db.transaction_manager.execute_transaction(client_id)
-        return results
-
-    def discard_command(self, client_id):
-        return self.db.transaction_manager.discard_transaction(client_id) or "OK"
-    
-    # String-specific operations
-    def append_command(self, client_id, key, value):
-        return str(self.db.string.append(key, value))
-
-    def strlen_command(self, client_id, key):
-        return str(self.db.string.strlen(key))
-
-    def incr_command(self, client_id, key):
-        return str(self.db.string.incr(key))
-
-    def decr_command(self, client_id, key):
-        return str(self.db.string.decr(key))
-
-    def incrby_command(self, client_id, key, increment):
-        return str(self.db.string.incrby(key, int(increment)))
-
-    def decrby_command(self, client_id, key, decrement):
-        return str(self.db.string.decrby(key, int(decrement)))
-
-    def getrange_command(self, client_id, key, start, end):
-        return self.db.string.getrange(key, int(start), int(end))
-
-    def setrange_command(self, client_id, key, offset, value):
-        return str(self.db.string.setrange(key, int(offset), value))
 
 
