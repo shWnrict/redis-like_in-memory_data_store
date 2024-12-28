@@ -2,7 +2,6 @@
 
 import socket
 import select
-import logging
 from core.database import KeyValueStore
 from protocol import parse_resp, format_resp, format_pubsub_message
 from commands.core_handler import CoreCommandHandler
@@ -22,15 +21,11 @@ class TCPServer:
         self.active_clients = set()
         self.pubsub_manager = PubSubManager()
         self.subscribed_clients = set()
-        self.logger = logging.getLogger('TCPServer')
-        self.client_sockets = {}  # Map client_id to socket
-        self.client_channels = defaultdict(set)  # Track channels per client
-
-        # Initialize command handlers
+        self.client_sockets = {}
+        self.client_channels = defaultdict(set)
+        
         self.command_map = {}
         self._init_command_handlers()
-        
-        # Set command map in database for transaction handling
         self.db.set_command_map(self.command_map)
 
     def _init_command_handlers(self):
@@ -55,7 +50,8 @@ class TCPServer:
             
             while not self.shutting_down:
                 try:
-                    readable, _, _ = select.select([self.server_socket] + list(self.active_clients), [], [], self.socket_timeout)
+                    sockets_to_monitor = [self.server_socket] + list(self.active_clients)
+                    readable, _, _ = select.select(sockets_to_monitor, [], [], self.socket_timeout)
                     
                     for sock in readable:
                         if sock is self.server_socket:
@@ -64,12 +60,10 @@ class TCPServer:
                             print(f"Connection from {address}")
                             self.active_clients.add(client_socket)
                             self.client_sockets[address[1]] = client_socket
-                            self.logger.info(f"New client connection: {address[1]}")
                         else:
                             try:
                                 self.handle_client_data(sock)
-                            except Exception as e:
-                                self.logger.error(f"Error handling client data: {e}")
+                            except Exception:
                                 self.cleanup_client_by_socket(sock)
                                 
                 except select.error:
@@ -77,10 +71,13 @@ class TCPServer:
                         break
                 except socket.timeout:
                     continue
+                except KeyboardInterrupt:
+                    print("\nShutting down gracefully...")
+                    break
                 except Exception as e:
-                    self.logger.error(f"Server error: {e}")
                     if self.shutting_down:
                         break
+                    print(f"Server error: {e}")
         finally:
             self.stop()
 
@@ -125,35 +122,29 @@ class TCPServer:
             if not request:
                 return
                 
-            self.logger.debug(f"Received request from {client_id}: {request}")
             response = self.process_request(request, client_id)
             
             # Handle subscription mode
             if isinstance(response, tuple):
                 msg_type, channel = response
                 if msg_type == "SUBSCRIBE_MODE":
-                    self.logger.debug(f"Subscribing client {client_id} to {channel}")
                     self.subscribed_clients.add(client_id)
                     self.client_channels[client_id].add(channel)
-                    subscribe_msg = format_pubsub_message("subscribe", channel)
-                    client_socket.sendall(subscribe_msg.encode())
+                    client_socket.sendall(format_pubsub_message("subscribe", channel).encode())
                     return
             
             if response is not None:
                 client_socket.sendall(format_resp(response).encode())
                 
-        except Exception as e:
-            self.logger.error(f"Error in handle_client_data: {e}")
+        except Exception:
             raise
 
     def cleanup_client_by_socket(self, client_socket):
         """Clean up client resources using socket reference."""
         try:
             client_id = client_socket.getpeername()[1]
-            self.logger.info(f"Cleaning up client {client_id}")
             if client_id in self.client_channels:
                 channels = self.client_channels.pop(client_id)
-                self.logger.debug(f"Removing client {client_id} from channels: {channels}")
             self.pubsub_manager.remove_client(client_id)
             self.subscribed_clients.discard(client_id)
             self.client_sockets.pop(client_id, None)
@@ -174,15 +165,12 @@ class TCPServer:
         command = request[0].upper()
         args = request[1:]
 
-        self.logger.debug(f"Processing command from client {client_id}: {command} {args}")
-
         # Handle pub/sub commands first
         if command == "SUBSCRIBE":
             if len(args) != 1:
                 return "ERROR: SUBSCRIBE requires channel name"
             channel = args[0]
-            self.logger.info(f"Client {client_id} subscribing to channel {channel}")
-            count = self.pubsub_manager.subscribe(client_id, channel)
+            self.pubsub_manager.subscribe(client_id, channel)
             return ("SUBSCRIBE_MODE", channel)
 
         if command == "PUBLISH":
@@ -191,7 +179,6 @@ class TCPServer:
             channel, message = args
             receivers, subscriber_list = self.pubsub_manager.publish(channel, message)
             
-            self.logger.info(f"Publishing to {len(subscriber_list)} subscribers on channel {channel}")
             delivered = 0
             for subscriber_id in subscriber_list:
                 if subscriber_id in self.subscribed_clients:
@@ -201,9 +188,7 @@ class TCPServer:
                             message_resp = format_pubsub_message("message", channel, message)
                             subscriber_socket.sendall(message_resp.encode())
                             delivered += 1
-                            self.logger.debug(f"Successfully delivered to subscriber {subscriber_id}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to deliver to subscriber {subscriber_id}: {e}")
+                    except:
                         continue
             return delivered
 
