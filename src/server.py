@@ -130,8 +130,21 @@ class TCPServer:
     def process_request(self, request, client_id):
         if not request:
             return "ERROR: Empty command"
+        
         command = request[0].upper()
         args = request[1:]
+
+        # Handle transaction commands specially
+        if command in ["MULTI", "EXEC", "DISCARD"]:
+            return self.command_map[command](client_id, *args)
+
+        # Check if in transaction
+        if self.db.transaction_manager.is_in_transaction(client_id):
+            result = self.db.transaction_manager.queue_command(client_id, command, *args)
+            if result is not None:
+                return result
+
+        # Normal command execution
         if command in self.command_map:
             return self.command_map[command](client_id, *args)
         return f"ERROR: Unknown command {command}"

@@ -15,6 +15,7 @@ class KeyValueStore:
         self.transaction_manager = TransactionManager(self)
         self.aof_logger = AOFLogger()
         self.string = StringDataType(self)  # Initialize string operations
+        self.command_map = None  # Will be set by server
 
         # Disable logging during replay
         self.replaying = True
@@ -24,6 +25,10 @@ class KeyValueStore:
         # Start background cleaner
         self.expiry_cleaner_thread = threading.Thread(target=self.expiry_manager.clean_expired_keys, daemon=True)
         self.expiry_cleaner_thread.start()
+
+    def set_command_map(self, command_map):
+        """Set the command map for transaction handling."""
+        self.command_map = command_map
 
     def set(self, key, value):
         """Set a key-value pair and log the operation."""
