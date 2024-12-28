@@ -2,6 +2,7 @@
 
 import socket
 from core.database import KeyValueStore
+from protocol import parse_resp, format_resp
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -42,96 +43,102 @@ class TCPServer:
                     client_socket, address = server_socket.accept()
                     print(f"Connection from {address}")
                     with client_socket:
-                        self.handle_client(client_socket)
+                        self.handle_client(client_socket, address)
+        except KeyboardInterrupt:
+            print("Server shutting down...")
         finally:
             self.db.stop()  # Ensure AOF logger stops on exit
 
     def handle_client(self, client_socket, address):
         client_id = address[1]
-        while True:
-            try:
-                data = client_socket.recv(1024).decode().strip()
-                if not data:
+        try:
+            while True:
+                try:
+                    data = client_socket.recv(1024).decode()
+                    if not data:
+                        break
+                    request = parse_resp(data)
+                    response = self.process_request(request, client_id)
+                    client_socket.sendall(format_resp(response).encode())
+                except ConnectionResetError:
+                    print(f"Connection reset by {address}")
                     break
-                response = self.process_request(data, client_id)
-                client_socket.sendall(response.encode())
-            except Exception as e:
-                client_socket.sendall(f"ERROR: {e}".encode())
-                break
+                except Exception as e:
+                    client_socket.sendall(format_resp(f"ERROR: {e}").encode())
+                    break
+        except KeyboardInterrupt:
+            print("Server shutting down...")
+        finally:
+            client_socket.close()
 
     def process_request(self, request, client_id):
-        parts = request.split()
-        command = parts[0].upper()
-        args = parts[1:]
+        if not request:
+            return "ERROR: Empty command"
+        command = request[0].upper()
+        args = request[1:]
         if command in self.command_map:
             return self.command_map[command](client_id, *args)
         return f"ERROR: Unknown command {command}"
 
     # Core operations
-    def set_command(self, key, value):
+    def set_command(self, client_id, key, value):
         self.db.set(key, value)
         return "OK"
 
-    def get_command(self, key):
+    def get_command(self, client_id, key):
         value = self.db.get(key)
         return value if value else "(nil)"
 
-    def del_command(self, key):
-        result = self.db.delete(key)
-        return "(1)" if result else "(0)"
+    def del_command(self, client_id, key):
+        return "(1)" if self.db.delete(key) else "(0)"
 
-    def exists_command(self, key):
+    def exists_command(self, client_id, key):
         return "(1)" if self.db.exists(key) else "(0)"
 
     # Expiration commands
-    def expire_command(self, key, ttl):
-        result = self.db.expiry_manager.set_expiry(key, int(ttl))
-        return "(1)" if result else "(0)"
+    def expire_command(self, client_id, key, ttl):
+        return "(1)" if self.db.expiry_manager.set_expiry(key, int(ttl)) else "(0)"
 
-    def ttl_command(self, key):
-        ttl = self.db.expiry_manager.ttl(key)
-        return str(ttl)
+    def ttl_command(self, client_id, key):
+        return str(self.db.expiry_manager.ttl(key))
 
-    def persist_command(self, key):
-        result = self.db.expiry_manager.persist(key)
-        return "(1)" if result else "(0)"
+    def persist_command(self, client_id, key):
+        return "(1)" if self.db.expiry_manager.persist(key) else "(0)"
     
     # Transaction commands
     def multi_command(self, client_id):
-        result = self.db.transaction_manager.start_transaction(client_id)
-        return result if result else "OK"
+        return self.db.transaction_manager.start_transaction(client_id) or "OK"
 
     def exec_command(self, client_id):
         results = self.db.transaction_manager.execute_transaction(client_id)
-        return "\n".join(map(str, results))
+        return results
 
     def discard_command(self, client_id):
-        result = self.db.transaction_manager.discard_transaction(client_id)
-        return result if result else "OK"
+        return self.db.transaction_manager.discard_transaction(client_id) or "OK"
     
     # String-specific operations
-    def append_command(self, key, value):
+    def append_command(self, client_id, key, value):
         return str(self.db.string.append(key, value))
 
-    def strlen_command(self, key):
+    def strlen_command(self, client_id, key):
         return str(self.db.string.strlen(key))
 
-    def incr_command(self, key):
+    def incr_command(self, client_id, key):
         return str(self.db.string.incr(key))
 
-    def decr_command(self, key):
+    def decr_command(self, client_id, key):
         return str(self.db.string.decr(key))
 
-    def incrby_command(self, key, increment):
+    def incrby_command(self, client_id, key, increment):
         return str(self.db.string.incrby(key, int(increment)))
 
-    def decrby_command(self, key, decrement):
+    def decrby_command(self, client_id, key, decrement):
         return str(self.db.string.decrby(key, int(decrement)))
 
-    def getrange_command(self, key, start, end):
+    def getrange_command(self, client_id, key, start, end):
         return self.db.string.getrange(key, int(start), int(end))
 
-    def setrange_command(self, key, offset, value):
+    def setrange_command(self, client_id, key, offset, value):
         return str(self.db.string.setrange(key, int(offset), value))
 
 
