@@ -21,6 +21,9 @@ class TCPServer:
         # Initialize command handlers
         self.command_map = {}
         self._init_command_handlers()
+        
+        # Set command map in database for transaction handling
+        self.db.set_command_map(self.command_map)
 
     def _init_command_handlers(self):
         """Initialize all command handlers and build command map."""

@@ -34,8 +34,9 @@ class TransactionManager:
             
             # Execute commands atomically
             for command, args in commands:
-                if command in self.database.command_map:
-                    result = self.database.command_map[command](client_id, *args)
+                command_func = self.database.command_map.get(command)
+                if command_func:
+                    result = command_func(client_id, *args)
                     results.append(result)
                 else:
                     results.append(f"ERROR: Unknown command {command}")
@@ -43,7 +44,8 @@ class TransactionManager:
             # Clean up transaction state
             self.in_transaction.remove(client_id)
             del self.transactions[client_id]
-            return results
+            return results if results else ["OK"]
+
         except Exception as e:
             # If any command fails, discard the transaction
             self.discard_transaction(client_id)
