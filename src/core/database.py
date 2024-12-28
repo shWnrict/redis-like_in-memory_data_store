@@ -3,6 +3,7 @@
 from core.expiry import ExpiryManager
 from core.transaction import TransactionManager
 from core.persistence import AOFLogger
+from datatypes.string import StringDataType
 import threading
 import time
 
@@ -13,6 +14,7 @@ class KeyValueStore:
         self.expiry_manager = ExpiryManager(self)
         self.transaction_manager = TransactionManager(self)
         self.aof_logger = AOFLogger()
+        self.string = StringDataType(self)  # Initialize string operations
 
         # Disable logging during replay
         self.replaying = True

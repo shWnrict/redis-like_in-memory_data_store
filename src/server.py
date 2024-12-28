@@ -114,16 +114,23 @@ class TCPServer:
                     request = parse_resp(data)
                     response = self.process_request(request, client_id)
                     client_socket.sendall(format_resp(response).encode())
-                except (socket.error, ConnectionResetError):
-                    print(f"Connection reset by {address}")
+                except (socket.error, ConnectionResetError) as e:
+                    print(f"Connection error for {address}: {e}")
                     break
                 except Exception as e:
-                    client_socket.sendall(format_resp(f"ERROR: {e}").encode())
-                    break
+                    error_message = f"ERROR: {str(e)}"
+                    try:
+                        client_socket.sendall(format_resp(error_message).encode())
+                    except:
+                        print(f"Could not send error to client {address}: {error_message}")
+                    continue
         finally:
             if client_socket in self.active_clients:
                 self.active_clients.remove(client_socket)
-            client_socket.close()
+            try:
+                client_socket.close()
+            except:
+                pass
 
     def process_request(self, request, client_id):
         if not request:
