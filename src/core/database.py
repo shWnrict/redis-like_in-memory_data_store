@@ -2,7 +2,7 @@
 
 from core.expiry import ExpiryManager
 from core.transaction import TransactionManager
-from core.persistence import AOFLogger
+from core.persistence import PersistenceManager
 from datatypes.string import StringDataType
 import threading
 import time
@@ -13,13 +13,13 @@ class KeyValueStore:
         self.expiry = {}
         self.expiry_manager = ExpiryManager(self)
         self.transaction_manager = TransactionManager(self)
-        self.aof_logger = AOFLogger()
+        self.persistence_manager = PersistenceManager(self)
         self.string = StringDataType(self)  # Initialize string operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
         self.replaying = True
-        self.aof_logger.replay(self)
+        self.persistence_manager.restore()
         self.replaying = False
 
         # Start background cleaner
@@ -38,7 +38,7 @@ class KeyValueStore:
         if key in self.expiry:
             del self.expiry[key]
         if not self.replaying:
-            self.aof_logger.log_command(f"SET {key} {value}")
+            self.persistence_manager.log_command(f"SET {key} {value}")
 
     def get(self, key):
         """Retrieve a key's value, considering expiry."""
@@ -53,7 +53,7 @@ class KeyValueStore:
             del self.store[key]
             self.expiry.pop(key, None)
             if not self.replaying:
-                self.aof_logger.log_command(f"DEL {key}")
+                self.persistence_manager.log_command(f"DEL {key}")
             return True
         return False
 
@@ -62,6 +62,6 @@ class KeyValueStore:
         return key in self.store and not (key in self.expiry and self.expiry[key] <= time.time())
 
     def stop(self):
-        """Stop the expiry manager and AOF logging."""
+        """Stop the managers and persistence."""
         self.expiry_manager.stop()
-        self.aof_logger.close()
+        self.persistence_manager.close()
