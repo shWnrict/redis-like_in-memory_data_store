@@ -57,6 +57,38 @@ def format_resp(data):
         data = str(data)
         return f"${len(data)}\r\n{data}\r\n"
 
+def format_pubsub_message(message_type, channel, data=None):
+    """Format Pub/Sub messages according to Redis protocol."""
+    if message_type == "subscribe":
+        return (
+            "*3\r\n"
+            "$9\r\n"
+            "subscribe\r\n"
+            f"${len(channel)}\r\n"
+            f"{channel}\r\n"
+            ":1\r\n"
+        )
+    elif message_type == "message":
+        return (
+            "*3\r\n"
+            "$7\r\n"
+            "message\r\n"
+            f"${len(channel)}\r\n"
+            f"{channel}\r\n"
+            f"${len(data)}\r\n"
+            f"{data}\r\n"
+        )
+    elif message_type == "unsubscribe":
+        return (
+            "*3\r\n"
+            "$11\r\n"
+            "unsubscribe\r\n"
+            f"${len(channel)}\r\n"
+            f"{channel}\r\n"
+            ":0\r\n"
+        )
+    return None
+
 def parse_next(data):
     """Helper to parse next element in array."""
     if not data:
