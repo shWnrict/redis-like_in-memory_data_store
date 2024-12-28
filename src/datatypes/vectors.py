@@ -3,6 +3,8 @@ from src.datatypes.base import BaseDataType  # Import BaseDataType
 from src.logger import setup_logger
 import threading
 import math
+import numpy as np
+from typing import List, Tuple
 
 logger = setup_logger("vectors")
 
@@ -10,6 +12,7 @@ class Vectors(BaseDataType):
     def __init__(self, store, expiry_manager=None):
         super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
+        self.dimension = None
 
     def _validate_vector(self, vector):
         if not isinstance(vector, list) or not all(isinstance(v, (int, float)) for v in vector):
@@ -164,13 +167,67 @@ class Vectors(BaseDataType):
             logger.info(f"VECTOR.SIMILARITY {key1} ~ {key2} -> {similarity}")
             return similarity
 
+    def vector_add(self, store, key, vector):
+        """Store a vector"""
+        with self.lock:
+            try:
+                vec = np.array(vector, dtype=np.float32)
+                if self.dimension is None:
+                    self.dimension = vec.shape[0]
+                elif vec.shape[0] != self.dimension:
+                    return "ERR Vector dimension mismatch"
+                store[key] = vec
+                return "OK"
+            except Exception as e:
+                return f"ERR {str(e)}"
+
+    def cosine_similarity(self, v1, v2) -> float:
+        """Calculate cosine similarity between two vectors"""
+        dot_product = np.dot(v1, v2)
+        norm_v1 = np.linalg.norm(v1)
+        norm_v2 = np.linalg.norm(v2)
+        return dot_product / (norm_v1 * norm_v2)
+
+    def knn_search(self, store, query_vector, k: int) -> List[Tuple[str, float]]:
+        """Find k-nearest neighbors"""
+        with self.lock:
+            try:
+                query_vec = np.array(query_vector, dtype=np.float32)
+                results = []
+                for key, vec in store.items():
+                    if isinstance(vec, np.ndarray):
+                        similarity = self.cosine_similarity(query_vec, vec)
+                        results.append((key, similarity))
+                results.sort(key=lambda x: x[1], reverse=True)
+                return results[:k]
+            except Exception as e:
+                logger.error(f"KNN search error: {e}")
+                return []
+
     def handle_command(self, cmd, store, *args):
+        cmd = cmd.upper()
         if cmd == "VECTOR.SET":
             return self.vector_set(store, args[0], *args[1:])
         elif cmd == "VECTOR.ADD":
-            if len(args) != 3:
-                return "ERR VECTOR.ADD requires 3 arguments"
-            return self.vector_add(store, args[0], args[1], args[2])
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            key = args[0]
+            try:
+                vector = [float(x) for x in args[1:]]
+                result = self.vector_add(store, key, vector)
+                return f"+{result}\r\n"
+            except ValueError:
+                return "-ERR invalid vector values\r\n"
+        elif cmd == "VECTOR.KNN":
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            try:
+                k = int(args[0])
+                vector = [float(x) for x in args[1:]]
+                results = self.knn_search(store, vector, k)
+                return self._format_knn_results(results)
+            except ValueError:
+                return "-ERR invalid arguments\r\n"
         elif cmd == "VECTOR.DOT":
             if len(args) != 2:
                 return "ERR VECTOR.DOT requires 2 arguments"

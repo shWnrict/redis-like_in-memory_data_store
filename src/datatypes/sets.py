@@ -1,117 +1,122 @@
 # src/datatypes/sets.py
 from src.logger import setup_logger
-import threading
 from src.datatypes.base import BaseDataType
+from src.protocol import RESPProtocol
+import threading
 
 logger = setup_logger("sets")
 
 class Sets(BaseDataType):
     def __init__(self, store, expiry_manager=None):
         super().__init__(store, expiry_manager)
+        self.lock = threading.Lock()
 
-    def sadd(self, key, *members):
-        """
-        Adds members to the set stored at the key.
-        """
+    def sadd(self, store, key, *members):
+        """Add members to set"""
         with self.lock:
-            if key not in self.store:
-                self.store[key] = set()
-            if not isinstance(self.store[key], set):
-                logger.error("ERR Key is not a set")
-                return "ERR Key is not a set"
+            if key not in store:
+                store[key] = set()
+            elif not isinstance(store[key], set):
+                return "ERR Key exists but is not a set"
+            
             added = 0
             for member in members:
-                if member not in self.store[key]:
-                    self.store[key].add(member)
+                if member not in store[key]:
+                    store[key].add(member)
                     added += 1
-            logger.info(f"SADD {key} -> {added} members added")
             return added
 
-    def srem(self, key, *members):
-        """
-        Removes members from the set stored at the key.
-        """
+    def srem(self, store, key, *members):
+        """Remove members from set"""
         with self.lock:
-            if key not in self.store or not isinstance(self.store[key], set):
-                return "ERR Key is not a set"
+            if key not in store or not isinstance(store[key], set):
+                return 0
+            
             removed = 0
             for member in members:
-                if member in self.store[key]:
-                    self.store[key].remove(member)
+                if member in store[key]:
+                    store[key].remove(member)
                     removed += 1
-            logger.info(f"SREM {key} -> {removed} members removed")
             return removed
 
-    def sismember(self, key, member):
-        """
-        Checks if a member is part of the set stored at the key.
-        """
+    def sinter(self, store, *keys):
+        """Return intersection of multiple sets"""
         with self.lock:
-            if key not in self.store or not isinstance(self.store[key], set):
+            sets = []
+            for key in keys:
+                if key not in store or not isinstance(store[key], set):
+                    return set()
+                sets.append(store[key])
+            return set.intersection(*sets)
+
+    def sunion(self, store, *keys):
+        """Return union of multiple sets"""
+        with self.lock:
+            result = set()
+            for key in keys:
+                if key in store and isinstance(store[key], set):
+                    result.update(store[key])
+            return result
+
+    def sdiff(self, store, *keys):
+        """Return difference between first set and all others"""
+        with self.lock:
+            if not keys or keys[0] not in store:
+                return set()
+            result = store[keys[0]].copy()
+            for key in keys[1:]:
+                if key in store and isinstance(store[key], set):
+                    result -= store[key]
+            return result
+
+    def sismember(self, store, key, member):
+        """Check if member exists in set"""
+        with self.lock:
+            if key not in store or not isinstance(store[key], set):
                 return 0
-            exists = 1 if member in self.store[key] else 0
-            logger.info(f"SISMEMBER {key} {member} -> {exists}")
-            return exists
+            return 1 if member in store[key] else 0
 
-    def smembers(self, key):
-        """
-        Returns all members of the set stored at the key.
-        """
+    def smembers(self, store, key):
+        """Return all members of set"""
         with self.lock:
-            if key not in self.store or not isinstance(self.store[key], set):
-                return "(nil)"
-            members = list(self.store[key])
-            logger.info(f"SMEMBERS {key} -> {members}")
-            return members
-
-    def sinter(self, *keys):
-        """
-        Returns the intersection of sets stored at the specified keys.
-        """
-        with self.lock:
-            sets = [self.store[key] for key in keys if key in self.store and isinstance(self.store[key], set)]
-            if not sets:
-                return []
-            result = list(set.intersection(*sets))
-            logger.info(f"SINTER {keys} -> {result}")
-            return result
-
-    def sunion(self, *keys):
-        """
-        Returns the union of sets stored at the specified keys.
-        """
-        with self.lock:
-            sets = [self.store[key] for key in keys if key in self.store and isinstance(self.store[key], set)]
-            result = list(set.union(*sets)) if sets else []
-            logger.info(f"SUNION {keys} -> {result}")
-            return result
-
-    def sdiff(self, key1, *keys):
-        """
-        Returns the difference of sets stored at the specified keys.
-        """
-        with self.lock:
-            if key1 not in self.store or not isinstance(self.store[key1], set):
-                return []
-            base_set = self.store[key1]
-            other_sets = [self.store[key] for key in keys if key in self.store and isinstance(self.store[key], set)]
-            result = list(base_set.difference(*other_sets)) if other_sets else list(base_set)
-            logger.info(f"SDIFF {key1} {keys} -> {result}")
-            return result
+            if key not in store or not isinstance(store[key], set):
+                return set()
+            return store[key].copy()
 
     def handle_command(self, cmd, store, *args):
+        """Handle set commands"""
+        cmd = cmd.upper()
         if cmd == "SADD":
-            return self.sadd(args[0], *args[1:])
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            key, *members = args
+            return f":{self.sadd(store, key, *members)}\r\n"
         elif cmd == "SREM":
-            return self.srem(args[0], *args[1:])
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            key, *members = args
+            return f":{self.srem(store, key, *members)}\r\n"
         elif cmd == "SISMEMBER":
-            return self.sismember(args[0], args[1])
+            if len(args) != 2:
+                return "-ERR wrong number of arguments\r\n"
+            key, member = args
+            return f":{self.sismember(store, key, member)}\r\n"
         elif cmd == "SMEMBERS":
-            return self.smembers(args[0])
+            if len(args) != 1:
+                return "-ERR wrong number of arguments\r\n"
+            key = args[0]
+            return RESPProtocol.format_array(self.smembers(store, key))
         elif cmd == "SINTER":
-            return self.sinter(*args)
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            return RESPProtocol.format_array(self.sinter(store, *args))
         elif cmd == "SUNION":
-            return self.sunion(*args)
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            return RESPProtocol.format_array(self.sunion(store, *args))
         elif cmd == "SDIFF":
-            return self.sdiff(args[0], *args[1:])
-        return "ERR Unknown command"
+            if len(args) < 2:
+                return "-ERR wrong number of arguments\r\n"
+            return RESPProtocol.format_array(self.sdiff(store, *args))
+        else:
+            return "-ERR Unknown set command\r\n"

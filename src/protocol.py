@@ -3,58 +3,57 @@ import json
 
 class RESPProtocol:
     @staticmethod
-    def parse_message(message: str):
-        """
-        Parse a RESP message and return a list of commands.
-        """
-        commands = []
-        while message:
-            if message.startswith('*'):
-                # Array type
-                parts = message.split('\r\n')
-                array_length = int(parts[0][1:])
-                message = '\r\n'.join(parts[1:])
-                command = []
-                for _ in range(array_length):
-                    if message.startswith('$'):
-                        dollar_parts = message.split('\r\n', 2)
-                        length = int(dollar_parts[0][1:])
-                        value = dollar_parts[1]
-                        command.append(value)
-                        message = dollar_parts[2] if len(dollar_parts) > 2 else ''
-                commands.append(command)
-            else:
-                break
-        return commands
+    def parse_message(message: str) -> List[List[str]]:
+        """Parse RESP message into command list"""
+        if not message or not message.startswith("*"):
+            return []
+        
+        try:
+            lines = message.strip().split("\r\n")
+            commands = []
+            i = 0
+            while i < len(lines):
+                if lines[i].startswith("*"):
+                    count = int(lines[i][1:])
+                    command = []
+                    i += 1
+                    for _ in range(count):
+                        if lines[i].startswith("$"):
+                            length = int(lines[i][1:])
+                            i += 1
+                            command.append(lines[i][:length])
+                        i += 1
+                    commands.append(command)
+                else:
+                    i += 1
+            return commands
+        except Exception as e:
+            logger.error(f"Error parsing RESP message: {e}")
+            return []
 
     @staticmethod
-    def format_response(response):
-        """
-        Format a response string into RESP format.
-        """
+    def format_response(response) -> str:
+        """Format response in RESP protocol"""
         if isinstance(response, str):
-            if response.startswith("-ERR"):
-                return f"-Error: {response[4:]}\r\n"
-            elif response.startswith("+OK"):
-                return f"+OK\r\n"
-            elif response.startswith(":"):
+            if response.startswith("-") or response.startswith("+"):
                 return f"{response}\r\n"
-            elif response.startswith("$"):
-                return f"{response}\r\n"
-            else:
-                return f"+{response}\r\n"
+            return f"+{response}\r\n"
         elif isinstance(response, int):
             return f":{response}\r\n"
         elif isinstance(response, list):
-            formatted = f"*{len(response)}\r\n"
+            if not response:
+                return "*0\r\n"
+            resp = f"*{len(response)}\r\n"
             for item in response:
-                if item is None:
-                    formatted += "$-1\r\n"
+                if isinstance(item, (list, tuple)):
+                    resp += RESPProtocol.format_response(item)
                 else:
-                    formatted += f"${len(str(item))}\r\n{item}\r\n"
-            return formatted
-        else:
+                    resp += f"${len(str(item))}\r\n{item}\r\n"
+            return resp
+        elif response is None:
             return "$-1\r\n"
+        else:
+            return f"${len(str(response))}\r\n{response}\r\n"
 
     @staticmethod
     def _format_single_response(response):

@@ -1,11 +1,12 @@
 # src/datatypes/base.py
 
 import threading
+from abc import ABC, abstractmethod
 from src.logger import setup_logger
 
 logger = setup_logger("base_datatype")
 
-class BaseDataType:
+class BaseDataType(ABC):
     def __init__(self, store, expiry_manager=None):
         self.store = store
         self.expiry_manager = expiry_manager
@@ -29,10 +30,8 @@ class BaseDataType:
             return self.expiry_manager.handle_persist(key)
         return 0
 
+    @abstractmethod
     def handle_command(self, cmd, store, *args):
-        """
-        Handle a command. Must be implemented by subclasses.
-        """
-        raise NotImplementedError("handle_command must be implemented by subclasses")
+        pass
 
     # ...other common methods...

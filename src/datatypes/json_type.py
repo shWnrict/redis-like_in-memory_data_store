@@ -1,170 +1,77 @@
 # src/datatypes/json_type.py
-from src.logger import setup_logger
-import threading
+from src.datatypes.base import BaseDataType
 import json
-import re
+import threading
+import jsonpath_ng
+from src.logger import setup_logger
 
-logger = setup_logger("json")
+logger = setup_logger("json_type")
 
-class JSONType:
-    def __init__(self):
+class JSONType(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
-
-    def _validate_json(self, value):
-        """
-        Validate and parse JSON strings.
-        """
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return None
-
-    def _navigate_to_path(self, store, key, path):
-        """
-        Helper method to navigate to the specified path in the JSON object.
-        """
-        if key not in store or not isinstance(store[key], dict):
-            return None, "ERR Key is not a JSON object"
-
-        current = store[key]
-        keys = path.split(".")
-        for k in keys[:-1]:
-            if k not in current or not isinstance(current[k], dict):
-                return None, "ERR Path not found or invalid"
-            current = current[k]
-
-        return current, None
-
-    def _get_value_at_path(self, data, path):
-        if path == ".":
-            return data
-        
-        keys = path.strip(".").split(".")
-        current = data
-        
-        for key in keys:
-            if not isinstance(current, dict) or key not in current:
-                return None
-            current = current[key]
-        return current
 
     def json_set(self, store, key, path, value):
         with self.lock:
             try:
-                value = json.loads(value)
-            except json.JSONDecodeError:
-                return "ERR Invalid JSON value"
-
-            if path == ".":
-                store[key] = value
+                json_value = json.loads(value)
+                if path == "$":
+                    store[key] = json_value
+                else:
+                    if key not in store:
+                        store[key] = {}
+                    jsonpath_expr = jsonpath_ng.parse(path)
+                    jsonpath_expr.update(store[key], json_value)
                 return "OK"
-
-            if key not in store:
-                store[key] = {}
-            
-            current = store[key]
-            keys = path.strip(".").split(".")
-            
-            for k in keys[:-1]:
-                if k not in current:
-                    current[k] = {}
-                current = current[k]
-            
-            current[keys[-1]] = value
-            return "OK"
-
-    def json_get(self, store, key, path):
-        if key not in store:
-            return None  # Changed from "(nil)"
-        
-        value = self._get_value_at_path(store[key], path)
-        if value is None:
-            return None  # Changed from "(nil)"
-            
-        return value
-
-    def json_del(self, store, key, path):
-        if key not in store:
-            return 0
-
-        if path == ".":
-            del store[key]
-            return 1
-
-        keys = path.strip(".").split(".")
-        current = store[key]
-        
-        for k in keys[:-1]:
-            if not isinstance(current, dict) or k not in current:
-                return 0
-            current = current[k]
-
-        if not isinstance(current, dict) or keys[-1] not in current:
-            return 0
-            
-        del current[keys[-1]]
-        return 1
-
-    def json_arrappend(self, store, key, path, *values):
-        with self.lock:
-            if key not in store:
-                store[key] = {}
-
-            # If path doesn't exist, create an empty array
-            keys = path.strip(".").split(".")
-            current = store[key]
-            
-            for k in keys[:-1]:
-                if k not in current:
-                    current[k] = {}
-                current = current[k]
-                
-            last_key = keys[-1]
-            if last_key not in current:
-                current[last_key] = []
-            elif not isinstance(current[last_key], list):
-                return "ERR Path does not point to an array"
-
-            try:
-                parsed_values = [json.loads(v) for v in values]
             except json.JSONDecodeError:
-                return "ERR Values must be JSON serializable"
+                return "ERR Invalid JSON string"
+            except Exception as e:
+                return f"ERR {str(e)}"
 
-            current[last_key].extend(parsed_values)
-            return len(current[last_key])
-        
-    def json_query(self, store, key, json_path):
-        """
-        Retrieve data using a simple JSONPath-like syntax.
-        Supports paths like $.store.book[0].title
-        """
+    def json_get(self, store, key, path="$"):
         with self.lock:
-            if key not in store or not isinstance(store[key], (dict, list)):
+            if key not in store:
                 return None
-
-            data = store[key]
-            # Simple regex to parse JSONPath
-            tokens = re.findall(r'\w+|\[\d+\]', json_path)
             try:
-                for token in tokens:
-                    if token.startswith('[') and token.endswith(']'):
-                        index = int(token[1:-1])
-                        data = data[index]
-                    else:
-                        data = data[token]
-                return data
-            except (KeyError, IndexError, TypeError):
-                return None
+                jsonpath_expr = jsonpath_ng.parse(path)
+                matches = [match.value for match in jsonpath_expr.find(store[key])]
+                return matches[0] if matches else None
+            except Exception as e:
+                return f"ERR {str(e)}"
+
+    def json_del(self, store, key, path="$"):
+        with self.lock:
+            if key not in store:
+                return 0
+            try:
+                if path == "$":
+                    del store[key]
+                    return 1
+                jsonpath_expr = jsonpath_ng.parse(path)
+                matches = jsonpath_expr.find(store[key])
+                for match in matches:
+                    match.context.value.pop(match.path[-1])
+                return len(matches)
+            except Exception as e:
+                return f"ERR {str(e)}"
 
     def handle_command(self, cmd, store, *args):
+        cmd = cmd.upper()
         if cmd == "JSON.SET":
-            return self.json_set(store, args[0], args[1], args[2])
+            if len(args) != 3:
+                return "-ERR wrong number of arguments\r\n"
+            key, path, value = args
+            result = self.json_set(store, key, path, value)
+            return f"+{result}\r\n"
         elif cmd == "JSON.GET":
-            return self.json_get(store, args[0], args[1]) if len(args) > 1 else self.json_get(store, args[0], ".")
-        elif cmd == "JSON.DEL":
-            return self.json_del(store, args[0], args[1])
-        elif cmd == "JSON.ARRAPPEND":
-            return self.json_arrappend(store, args[0], args[1], *args[2:])
-        elif cmd == "JSON.QUERY":
-            return self.json_query(store, args[0], args[1])
-        return "ERR Unknown command"
+            if len(args) < 1:
+                return "-ERR wrong number of arguments\r\n"
+            key = args[0]
+            path = args[1] if len(args) > 1 else "$"
+            result = self.json_get(store, key, path)
+            if result is None:
+                return "$-1\r\n"
+            json_str = json.dumps(result)
+            return f"${len(json_str)}\r\n{json_str}\r\n"
+        # ... handle other JSON commands

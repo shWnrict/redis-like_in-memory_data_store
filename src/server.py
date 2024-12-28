@@ -48,7 +48,7 @@ from src.clustering.node import Node
 from src.clustering.replication import ReplicationManager
 from src.core.pipeline_manager import PipelineManager  # Import PipelineManager
 
-logger = setup_logger(level=Config.LOG_LEVEL)
+logger = setup_logger("server", level=Config.LOG_LEVEL)
 
 class Server:
     def __init__(self, host=Config.HOST, port=Config.PORT, max_clients=Config.MAX_CLIENTS):
@@ -75,7 +75,7 @@ class Server:
         self.sets = Sets(self.data_store.store, self.expiry_manager)
         self.hashes = Hashes(self.data_store.store, self.expiry_manager)
         self.sorted_sets = SortedSets(self.data_store.store, self.expiry_manager)
-        self.streams = Streams(self.data_store.store, self.expiry_manager)
+        self.streams = Streams(self.data_store.store, self.expiry_manager)  # Ensure correct instantiation
         self.json_type = JSONType(self.data_store.store, self.expiry_manager)
         self.bitmaps = Bitmaps(self.data_store.store, self.expiry_manager)
         self.bitfields = Bitfields(self.data_store.store, self.expiry_manager)
@@ -196,15 +196,20 @@ class Server:
             for client in self.clients:
                 try:
                     client.close()
-                except:
-                    pass
+                    logger.info(f"Closed connection to client {id(client)}")
+                except Exception as e:
+                    logger.error(f"Error closing client socket: {e}")
             self.clients.clear()
         self.snapshot.save(self.data_store)  # Pass the DataStore object directly
         self.aof.truncate(self.data_store.store)
         self.expiry_manager.stop()  # Stop ExpiryManager
         self.memory_manager.stop()  # Stop MemoryManager
         self.snapshot.stop()
-        self.server_socket.close()
+        try:
+            self.server_socket.close()
+            logger.info("Server socket closed.")
+        except Exception as e:
+            logger.error(f"Error closing server socket: {e}")
         self.node_communication.stop()
         logger.info("Server stopped")
 
@@ -213,6 +218,7 @@ class Server:
         
         with self.clients_lock:
             self.clients.add(client_socket)
+            logger.info(f"Client {client_id} connected.")
 
         buffer = b""
         try:
@@ -265,14 +271,20 @@ class Server:
 
                 except BlockingIOError:
                     continue
+                except Exception as e:
+                    logger.error(f"Error receiving data from client {client_id}: {e}")
+                    break
         except Exception as e:
-            logger.error(f"Error handling client: {e}")
+            logger.error(f"Error handling client {client_id}: {e}")
         finally:
             with self.clients_lock:
                 self.clients.remove(client_socket)
-            client_socket.close()
-            logger.info(f"Client {client_id} disconnected.")
-            
+                logger.info(f"Client {client_id} disconnected.")
+            try:
+                client_socket.close()
+            except Exception as e:
+                logger.error(f"Error closing client socket {client_id}: {e}")
+
     def process_command(self, command, client_socket=None):
         start_time = time.time()
         response = self.command_router.route(command, client_socket)

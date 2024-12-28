@@ -1,8 +1,10 @@
 # src/datatypes/timeseries.py
+import threading  # Added import
+import time  # Added import
+
 from src.logger import setup_logger
-import threading
-import time
 from src.datatypes.base import BaseDataType  # Import BaseDataType
+from src.protocol import RESPProtocol
 
 logger = setup_logger("timeseries")
 
@@ -11,47 +13,58 @@ class TimeSeries(BaseDataType):
         super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
-    def ts_add(self, store, key, timestamp, value):
+    @classmethod
+    def create(cls, store, key):
         """
-        Add a data point to the time series.
+        Create a new time series key.
+        """
+        with cls(store).lock:
+            if key in store:
+                logger.warning(f"TS.CREATE failed: Key '{key}' already exists.")
+                return "ERR Key already exists"
+            store[key] = []
+            logger.info(f"TS.CREATE {key} -> OK")
+            return "OK"
+
+    def add(self, store, key, value, timestamp=None):
+        """
+        Adds a value with an optional timestamp to the time series.
         """
         with self.lock:
             if key not in store:
                 store[key] = []
+            if timestamp is None:
+                timestamp = int(time.time() * 1000)
             store[key].append((timestamp, value))
-            store[key].sort(key=lambda x: x[0])  # Ensure sorted by timestamp
             logger.info(f"TS.ADD {key} {timestamp} -> {value}")
-            return "OK"
+            return timestamp
 
-    def ts_range(self, store, key, start, end, aggregation=None, bucket=None):
+    def range(self, store, key, start, end, count=None):
         """
-        Retrieve data points within a range. Supports optional aggregation.
+        Retrieves a range of entries from the time series.
         """
         with self.lock:
             if key not in store:
                 return []
-            data = store[key]
-            filtered = [(ts, val) for ts, val in data if start <= ts <= end]
-            
-            if aggregation and bucket:
-                aggregated = {}
-                for ts, val in filtered:
-                    bucket_ts = ts - (ts % bucket)
-                    if bucket_ts not in aggregated:
-                        aggregated[bucket_ts] = []
-                    aggregated[bucket_ts].append(val)
-                if aggregation == "avg":
-                    result = [(ts, sum(vals)/len(vals)) for ts, vals in aggregated.items()]
-                elif aggregation == "sum":
-                    result = [(ts, sum(vals)) for ts, vals in aggregated.items()]
-                else:
-                    return "ERR Unsupported aggregation"
-                logger.info(f"TS.RANGE {key} {start} {end} with {aggregation} -> {result}")
-                return result
+            entries = store[key]
+            filtered = [entry for entry in entries if start <= entry[0] <= end]
+            if count:
+                filtered = filtered[:count]
             logger.info(f"TS.RANGE {key} {start} {end} -> {filtered}")
             return filtered
 
-    def ts_get(self, store, key, timestamp):
+    def len(self, store, key):
+        """
+        Returns the number of entries in the time series.
+        """
+        with self.lock:
+            if key not in store:
+                return 0
+            length = len(store[key])
+            logger.info(f"TS.LEN {key} -> {length}")
+            return length
+
+    def get(self, store, key, timestamp):
         """
         Get the value at a specific timestamp.
         """
@@ -66,17 +79,31 @@ class TimeSeries(BaseDataType):
             return "(nil)"
 
     def handle_command(self, cmd, store, *args):
-        if cmd == "TS.ADD":
-            key, timestamp, value = args
-            return self.ts_add(store, key, int(timestamp), float(value))
+        """
+        Dispatch time series commands to the appropriate methods.
+        """
+        cmd = cmd.upper()
+        if cmd == "TS.CREATE":
+            if len(args) != 1:
+                return "-ERR wrong number of arguments for 'TS.CREATE' command\r\n"
+            key = args[0]
+            result = self.create(store, key)
+            return f"+{result}\r\n"
+        elif cmd == "TS.ADD":
+            key, value = args[:2]
+            timestamp = int(args[2]) if len(args) > 2 else None
+            return self.add(store, key, value, timestamp)
         elif cmd == "TS.RANGE":
             key, start, end = args[:3]
-            if len(args) > 3:
-                aggregation = args[3].upper()
-                bucket = int(args[4])
-                return self.ts_range(store, key, int(start), int(end), aggregation, bucket)
-            return self.ts_range(store, key, int(start), int(end))
+            count = int(args[3]) if len(args) > 3 else None
+            return self.range(store, key, start, end, count)
+        elif cmd == "TS.LEN":
+            key = args[0]
+            return self.len(store, key)
         elif cmd == "TS.GET":
+            if len(args) != 2:
+                return "-ERR wrong number of arguments for 'TS.GET' command\r\n"
             key, timestamp = args
-            return self.ts_get(store, key, int(timestamp))
-        return "ERR Unknown command"
+            result = self.ts_get(store, key, int(timestamp))
+            return RESPProtocol.format_response(result)
+        return "-ERR Unknown TS command\r\n"

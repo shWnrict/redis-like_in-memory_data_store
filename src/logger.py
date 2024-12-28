@@ -1,6 +1,6 @@
 import logging  # Import logging module
 
-def setup_logger(name="server_logger", level="INFO"):
+def setup_logger(name, level="INFO"):
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     

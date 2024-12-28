@@ -1,8 +1,9 @@
 # src/datatypes/sorted_sets.py
 from src.logger import setup_logger
-import threading
+import threading  # Import threading
 from sortedcontainers import SortedDict
 from src.datatypes.base import BaseDataType  # Import BaseDataType
+from src.protocol import RESPProtocol
 
 logger = setup_logger("sorted_sets")
 
@@ -11,30 +12,21 @@ class SortedSets(BaseDataType):
         super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
-    def zadd(self, store, key, *args):
+    def zadd(self, store, key, scores_and_members):
         """
-        Adds elements with their scores to the sorted set.
+        Add members with scores to sorted set
         """
-        if len(args) % 2 != 0:
-            return "ERR Invalid number of arguments"
-        
         with self.lock:
             if key not in store:
                 store[key] = SortedDict()
-            if not isinstance(store[key], SortedDict):
-                return "ERR Key is not a sorted set"
-
+            sorted_set = store[key]
+            
             added = 0
-            for i in range(0, len(args), 2):
-                try:
-                    score = float(args[i])
-                except ValueError:
-                    return "ERR Score is not a valid float"
-                member = args[i + 1]
-                if member not in store[key]:
+            for member, score in scores_and_members.items():
+                if member not in sorted_set:
                     added += 1
-                store[key][member] = score
-            logger.info(f"ZADD {key} -> {added} members added")
+                sorted_set[member] = float(score)
+            
             return added
 
     def zrange(self, store, key, start, end, with_scores=False):
@@ -101,3 +93,65 @@ class SortedSets(BaseDataType):
                 result = [member for member, _ in result]
             logger.info(f"ZRANGEBYSCORE {key} [{min_score}:{max_score}] -> {result}")
             return result
+
+    def zscan(self, store, key, cursor=0, match=None, count=None):
+        """
+        Incrementally iterate sorted set
+        """
+        with self.lock:
+            if key not in store:
+                return 0, []
+            
+            sorted_set = store[key]
+            members = list(sorted_set.items())
+            
+            # Implement cursor-based scanning
+            next_cursor = 0
+            if cursor >= len(members):
+                return next_cursor, []
+                
+            end = min(cursor + (count or 10), len(members))
+            result = members[cursor:end]
+            
+            if end < len(members):
+                next_cursor = end
+                
+            return next_cursor, result
+
+    def handle_command(self, cmd, store, *args):
+        """
+        Dispatch sorted set commands to the appropriate methods.
+        """
+        cmd = cmd.upper()
+        if cmd == "ZADD":
+            key = args[0]
+            score_member_pairs = args[1:]
+            if len(score_member_pairs) % 2 != 0:
+                return "-ERR wrong number of arguments for 'ZADD' command\r\n"
+            mapping = {score_member_pairs[i+1]: float(score_member_pairs[i]) for i in range(0, len(score_member_pairs), 2)}
+            result = self.zadd(store, key, mapping)
+            return f":{result}\r\n"
+        elif cmd == "ZRANGE":
+            key, start, end = args[:3]
+            with_scores = False
+            if len(args) > 3 and args[3].upper() == "WITHSCORES":
+                with_scores = True
+            result = self.zrange(store, key, int(start), int(end), with_scores)
+            return RESPProtocol.format_response(result)
+        elif cmd == "ZRANK":
+            key, member = args[:2]
+            rank = self.zrank(store, key, member)
+            return f":{rank}\r\n" if rank is not None else "$-1\r\n"
+        elif cmd == "ZREM":
+            key, *members = args
+            removed = self.zrem(store, key, *members)
+            return f":{removed}\r\n"
+        elif cmd == "ZRANGEBYSCORE":
+            key, min_score, max_score = args[:3]
+            with_scores = False
+            if len(args) > 3 and args[3].upper() == "WITHSCORES":
+                with_scores = True
+            result = self.zrangebyscore(store, key, float(min_score), float(max_score), with_scores)
+            return RESPProtocol.format_response(result)
+        else:
+            return "-ERR Unknown sorted set command\r\n"

@@ -68,6 +68,10 @@ class CommandRouter:
             "MQ.PUSH": self.handle_mq_push,
             "MQ.POP": self.handle_mq_pop,
             "MQ.PEEK": self.handle_mq_peek,
+            "XADD": self.server.streams.handle_command,        # Add Streams commands
+            "XREAD": self.server.streams.handle_command,
+            "XRANGE": self.server.streams.handle_command,
+            "XLEN": self.server.streams.handle_command,
             # Add other Lua scripting commands as needed
         }
         

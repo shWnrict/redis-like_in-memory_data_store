@@ -1,12 +1,14 @@
 # src/datatypes/streams.py
 from src.logger import setup_logger
+from src.datatypes.base import BaseDataType  # Ensure correct import
 import threading
 import time
 
 logger = setup_logger("streams")
 
-class Streams:
-    def __init__(self):
+class Streams(BaseDataType):
+    def __init__(self, store, expiry_manager=None):
+        super().__init__(store, expiry_manager)
         self.lock = threading.Lock()
 
     def xadd(self, store, key, entry_id, *args):
