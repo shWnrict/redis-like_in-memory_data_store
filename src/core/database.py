@@ -13,7 +13,11 @@ class KeyValueStore:
         self.expiry_manager = ExpiryManager(self)
         self.transaction_manager = TransactionManager(self)
         self.aof_logger = AOFLogger()
+
+        # Disable logging during replay
+        self.replaying = True
         self.aof_logger.replay(self)
+        self.replaying = False
 
         # Start background cleaner
         self.expiry_cleaner_thread = threading.Thread(target=self.expiry_manager.clean_expired_keys, daemon=True)
@@ -24,7 +28,8 @@ class KeyValueStore:
         self.store[key] = value
         if key in self.expiry:
             del self.expiry[key]
-        self.aof_logger.log_command(f"SET {key} {value}")
+        if not self.replaying:
+            self.aof_logger.log_command(f"SET {key} {value}")
 
     def get(self, key):
         """Retrieve a key's value, considering expiry."""
@@ -38,7 +43,8 @@ class KeyValueStore:
         if key in self.store:
             del self.store[key]
             self.expiry.pop(key, None)
-            self.aof_logger.log_command(f"DEL {key}")
+            if not self.replaying:
+                self.aof_logger.log_command(f"DEL {key}")
             return True
         return False
 
