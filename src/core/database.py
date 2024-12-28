@@ -32,6 +32,8 @@ class KeyValueStore:
 
     def set(self, key, value):
         """Set a key-value pair and log the operation."""
+        if isinstance(value, (list, tuple)):
+            value = ' '.join(map(str, value))
         self.store[key] = value
         if key in self.expiry:
             del self.expiry[key]

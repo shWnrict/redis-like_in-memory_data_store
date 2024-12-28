@@ -24,14 +24,15 @@ class AOFLogger:
         try:
             with open(self.file_path, "r") as file:
                 for line in file:
-                    command_parts = line.strip().split()
+                    command_parts = line.strip().split(maxsplit=2)
                     if command_parts:
-                        command = command_parts[0]
-                        args = command_parts[1:]
-                        if command == "SET":
-                            database.set(*args)
-                        elif command == "DEL":
-                            database.delete(*args)
+                        command = command_parts[0].upper()
+                        if command == "SET" and len(command_parts) >= 3:
+                            key = command_parts[1]
+                            value = command_parts[2]
+                            database.set(key, value)
+                        elif command == "DEL" and len(command_parts) >= 2:
+                            database.delete(command_parts[1])
                         # Add support for other commands if needed
         except FileNotFoundError:
             pass  # AOF file doesn't exist on first startup
