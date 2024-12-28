@@ -13,14 +13,24 @@ class TCPServer:
             "GET": self.get_command,
             "DEL": self.del_command,
             "EXISTS": self.exists_command,
+            "EXPIRE": self.expire_command,
+            "TTL": self.ttl_command,
+            "PERSIST": self.persist_command,
+            "APPEND": self.append_command,
+            "STRLEN": self.strlen_command,
+            "INCR": self.incr_command,
+            "DECR": self.decr_command,
+            "INCRBY": self.incrby_command,
+            "DECRBY": self.decrby_command,
+            "GETRANGE": self.getrange_command,
+            "SETRANGE": self.setrange_command,
         }
 
     def start(self):
-        """Start the TCP server."""
         print(f"Server started on {self.host}:{self.port}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
             server_socket.bind((self.host, self.port))
-            server_socket.listen(5)  # Allow up to 5 concurrent connections
+            server_socket.listen(5)
             while True:
                 client_socket, address = server_socket.accept()
                 print(f"Connection from {address}")
@@ -28,7 +38,6 @@ class TCPServer:
                     self.handle_client(client_socket)
 
     def handle_client(self, client_socket):
-        """Handle client requests."""
         while True:
             try:
                 data = client_socket.recv(1024).decode().strip()
@@ -41,7 +50,6 @@ class TCPServer:
                 break
 
     def process_request(self, request):
-        """Process a single client request."""
         parts = request.split()
         if not parts:
             return "ERROR: Empty command"
@@ -51,6 +59,7 @@ class TCPServer:
             return self.command_map[command](*args)
         return f"ERROR: Unknown command {command}"
 
+    # Core operations
     def set_command(self, key, value):
         self.db.set(key, value)
         return "OK"
@@ -65,3 +74,43 @@ class TCPServer:
 
     def exists_command(self, key):
         return "(1)" if self.db.exists(key) else "(0)"
+
+    # Expiration commands
+    def expire_command(self, key, ttl):
+        result = self.db.expiry_manager.set_expiry(key, int(ttl))
+        return "(1)" if result else "(0)"
+
+    def ttl_command(self, key):
+        ttl = self.db.expiry_manager.ttl(key)
+        return str(ttl)
+
+    def persist_command(self, key):
+        result = self.db.expiry_manager.persist(key)
+        return "(1)" if result else "(0)"
+    
+    # String-specific operations
+    def append_command(self, key, value):
+        return str(self.db.string.append(key, value))
+
+    def strlen_command(self, key):
+        return str(self.db.string.strlen(key))
+
+    def incr_command(self, key):
+        return str(self.db.string.incr(key))
+
+    def decr_command(self, key):
+        return str(self.db.string.decr(key))
+
+    def incrby_command(self, key, increment):
+        return str(self.db.string.incrby(key, int(increment)))
+
+    def decrby_command(self, key, decrement):
+        return str(self.db.string.decrby(key, int(decrement)))
+
+    def getrange_command(self, key, start, end):
+        return self.db.string.getrange(key, int(start), int(end))
+
+    def setrange_command(self, key, offset, value):
+        return str(self.db.string.setrange(key, int(offset), value))
+
+
