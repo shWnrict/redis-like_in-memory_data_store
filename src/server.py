@@ -34,35 +34,37 @@ class TCPServer:
 
     def start(self):
         print(f"Server started on {self.host}:{self.port}")
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-            server_socket.bind((self.host, self.port))
-            server_socket.listen(5)
-            while True:
-                client_socket, address = server_socket.accept()
-                print(f"Connection from {address}")
-                with client_socket:
-                    self.handle_client(client_socket)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+                server_socket.bind((self.host, self.port))
+                server_socket.listen(5)
+                while True:
+                    client_socket, address = server_socket.accept()
+                    print(f"Connection from {address}")
+                    with client_socket:
+                        self.handle_client(client_socket)
+        finally:
+            self.db.stop()  # Ensure AOF logger stops on exit
 
-    def handle_client(self, client_socket):
+    def handle_client(self, client_socket, address):
+        client_id = address[1]
         while True:
             try:
                 data = client_socket.recv(1024).decode().strip()
                 if not data:
                     break
-                response = self.process_request(data)
+                response = self.process_request(data, client_id)
                 client_socket.sendall(response.encode())
             except Exception as e:
                 client_socket.sendall(f"ERROR: {e}".encode())
                 break
 
-    def process_request(self, request):
+    def process_request(self, request, client_id):
         parts = request.split()
-        if not parts:
-            return "ERROR: Empty command"
         command = parts[0].upper()
         args = parts[1:]
         if command in self.command_map:
-            return self.command_map[command](*args)
+            return self.command_map[command](client_id, *args)
         return f"ERROR: Unknown command {command}"
 
     # Core operations
