@@ -13,9 +13,15 @@ class TCPServer:
             "GET": self.get_command,
             "DEL": self.del_command,
             "EXISTS": self.exists_command,
+            # Expiration commands   
             "EXPIRE": self.expire_command,
             "TTL": self.ttl_command,
             "PERSIST": self.persist_command,
+            # Transaction commands
+            "MULTI": self.multi_command,
+            "EXEC": self.exec_command,
+            "DISCARD": self.discard_command,
+            # String-specific commands
             "APPEND": self.append_command,
             "STRLEN": self.strlen_command,
             "INCR": self.incr_command,
@@ -87,6 +93,19 @@ class TCPServer:
     def persist_command(self, key):
         result = self.db.expiry_manager.persist(key)
         return "(1)" if result else "(0)"
+    
+    # Transaction commands
+    def multi_command(self, client_id):
+        result = self.db.transaction_manager.start_transaction(client_id)
+        return result if result else "OK"
+
+    def exec_command(self, client_id):
+        results = self.db.transaction_manager.execute_transaction(client_id)
+        return "\n".join(map(str, results))
+
+    def discard_command(self, client_id):
+        result = self.db.transaction_manager.discard_transaction(client_id)
+        return result if result else "OK"
     
     # String-specific operations
     def append_command(self, key, value):
