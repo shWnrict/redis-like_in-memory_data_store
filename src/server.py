@@ -12,6 +12,7 @@ from commands.core_handler import CoreCommandHandler
 from commands.transaction_handler import TransactionCommandHandler
 from commands.string_handler import StringCommandHandler
 from commands.list_handler import ListCommandHandler
+from commands.set_handler import SetCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -39,7 +40,8 @@ class TCPServer:
             CoreCommandHandler(self.db),
             StringCommandHandler(self.db),
             TransactionCommandHandler(self.db),
-            ListCommandHandler(self.db),  # Add list handler
+            ListCommandHandler(self.db),
+            SetCommandHandler(self.db),  # Add set handler
         ]
         
         for handler in handlers:
@@ -218,7 +220,8 @@ class TCPServer:
 
         # Add replication for write commands before execution
         if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE',
-                      'LPUSH', 'RPUSH', 'LPOP', 'RPOP', 'LSET']:  # Add list commands
+                      'LPUSH', 'RPUSH', 'LPOP', 'RPOP', 'LSET',
+                      'SADD', 'SREM']:  # Add set write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 

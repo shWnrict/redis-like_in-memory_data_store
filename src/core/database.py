@@ -5,6 +5,7 @@ from core.transaction import TransactionManager
 from core.persistence import PersistenceManager
 from datatypes.string import StringDataType
 from datatypes.list import ListDataType
+from datatypes.set import SetDataType
 import threading
 import time
 
@@ -17,6 +18,7 @@ class KeyValueStore:
         self.persistence_manager = PersistenceManager(self)
         self.string = StringDataType(self)  # Initialize string operations
         self.list = ListDataType(self)  # Initialize list operations
+        self.set = SetDataType(self)  # Initialize set operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
