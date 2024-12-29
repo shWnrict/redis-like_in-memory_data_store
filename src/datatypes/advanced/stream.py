@@ -106,9 +106,13 @@ class StreamDataType:
         except ValueError:
             return 0
 
-    def xgroup_create(self, key: str, group_name: str, id: str = '$') -> bool:
+    def xgroup_create(self, key: str, group_name: str, id: str = '$', mkstream: bool = False) -> bool:
         """Create a consumer group."""
         try:
+            # Create stream if MKSTREAM is specified and stream doesn't exist
+            if mkstream and not self.db.exists(key):
+                self._ensure_stream(key)
+
             stream = self._ensure_stream(key)
             if group_name in stream['groups']:
                 return False
@@ -117,7 +121,8 @@ class StreamDataType:
             stream['groups'][group_name] = ConsumerGroup(group_name, last_id)
             
             if not self.db.replaying:
-                self.db.persistence_manager.log_command(f"XGROUP CREATE {key} {group_name} {id}")
+                mk_param = " MKSTREAM" if mkstream else ""
+                self.db.persistence_manager.log_command(f"XGROUP CREATE {key} {group_name} {id}{mk_param}")
             
             return True
         except ValueError:
@@ -138,12 +143,15 @@ class StreamDataType:
 
                 if id == '>':  # Read new messages only
                     for entry_id, entry in stream['entries'].items():
-                        if entry_id > group_obj.last_delivered_id and entry_id not in group_obj.pending:
+                        if entry_id > group_obj.last_delivered_id:
                             entries.append((entry_id, entry.fields))
                             group_obj.pending[entry_id] = consumer
                             group_obj.consumers[consumer] += 1
                             if count and len(entries) >= count:
                                 break
+                    # Update last delivered ID
+                    if entries:
+                        group_obj.last_delivered_id = entries[-1][0]
                 else:  # Read from specific ID
                     for entry_id, entry in stream['entries'].items():
                         if entry_id > id:

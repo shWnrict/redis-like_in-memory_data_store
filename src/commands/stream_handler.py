@@ -110,50 +110,50 @@ class StreamCommandHandler(BaseCommandHandler):
                 return "ERROR: Wrong number of arguments for XGROUP CREATE"
             key, group = args[0], args[1]
             id = args[2] if len(args) > 2 else "$"
-            return "OK" if self.db.stream.xgroup_create(key, group, id) else "ERROR: Group already exists"
+            mkstream = len(args) > 3 and args[3].upper() == "MKSTREAM"
+            return "OK" if self.db.stream.xgroup_create(key, group, id, mkstream) else "ERROR: Group already exists"
         
         return f"ERROR: Unknown XGROUP subcommand {subcommand}"
 
     def xreadgroup_command(self, client_id, *args):
         """Read from stream as part of consumer group."""
-        if len(args) < 5:
+        if len(args) < 5:  # minimum: GROUP group-name consumer-name STREAMS key id
             return "ERROR: Wrong number of arguments for XREADGROUP"
 
-        group = args[0]
-        consumer = args[1]
-        count = None
-        arg_pos = 2
+        if args[0].upper() != "GROUP":
+            return "ERROR: Missing GROUP keyword"
 
-        if args[arg_pos].upper() == "COUNT":
-            if len(args) < 7:
-                return "ERROR: Wrong number of arguments for XREADGROUP with COUNT"
+        group = args[1]
+        consumer = args[2]
+        arg_pos = 3
+
+        # Parse optional COUNT
+        count = None
+        if len(args) > arg_pos and args[arg_pos].upper() == "COUNT":
+            if len(args) < arg_pos + 2:
+                return "ERROR: Missing COUNT value"
             try:
                 count = int(args[arg_pos + 1])
                 arg_pos += 2
             except ValueError:
                 return "ERROR: Invalid COUNT value"
 
-        if args[arg_pos].upper() != "STREAMS":
+        # Verify STREAMS keyword
+        if arg_pos >= len(args) or args[arg_pos].upper() != "STREAMS":
             return "ERROR: Missing STREAMS keyword"
         
         arg_pos += 1
-        split_point = len(args)
-        for i in range(arg_pos, len(args)):
-            if args[i] == '>':
-                split_point = i
-                break
-            try:
-                float(args[i])
-                split_point = i
-                break
-            except ValueError:
-                continue
+        if arg_pos >= len(args):
+            return "ERROR: Missing stream key"
 
-        keys = args[arg_pos:split_point]
-        ids = args[split_point:]
+        # Split remaining args into keys and IDs
+        remaining = args[arg_pos:]
+        mid = len(remaining) // 2
+        if mid == 0 or len(remaining) % 2 != 0:
+            return "ERROR: Unbalanced STREAMS input"
 
-        if len(keys) != len(ids):
-            return "ERROR: Unbalanced keys and IDs"
+        keys = remaining[:mid]
+        ids = remaining[mid:]
 
         result = self.db.stream.xreadgroup(group, consumer, keys, ids, count)
         if not result:
