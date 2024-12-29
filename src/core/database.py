@@ -14,6 +14,7 @@ from datatypes.advanced.bitmap import BitMapDataType
 from datatypes.advanced.bitfield import BitFieldDataType
 from datatypes.advanced.probabilistic import ProbabilisticDataType
 from datatypes.advanced.timeseries import TimeSeriesDataType
+from datatypes.advanced.json import JSONDataType
 import threading
 import time
 
@@ -35,6 +36,7 @@ class KeyValueStore:
         self.bitfield = BitFieldDataType(self)  # Initialize bitfield operations
         self.probabilistic = ProbabilisticDataType(self)  # Initialize probabilistic operations
         self.timeseries = TimeSeriesDataType(self)  # Initialize time series operations
+        self.json = JSONDataType(self)  # Initialize JSON operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
@@ -61,7 +63,8 @@ class KeyValueStore:
             elif isinstance(value, set):
                 log_value = ' '.join(sorted(str(x) for x in value))  # Sort for consistent logging
             elif isinstance(value, dict):
-                if 'entries' in value or 'points' in value:  # Stream or Geo type
+                if ('entries' in value or 'points' in value or  # For Stream/Geo
+                    isinstance(value.get('points'), dict)):  # For JSON objects
                     return  # These types handle their own persistence
                 log_value = ' '.join(f"{k} {v}" for k, v in sorted(value.items()))
             else:

@@ -21,6 +21,7 @@ from commands.bitmap_handler import BitMapCommandHandler
 from commands.bitfield_handler import BitFieldCommandHandler
 from commands.probabilistic_handler import ProbabilisticCommandHandler
 from commands.timeseries_handler import TimeSeriesCommandHandler
+from commands.json_handler import JSONCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -58,6 +59,7 @@ class TCPServer:
             BitFieldCommandHandler(self.db),  # Add bitfield handler
             ProbabilisticCommandHandler(self.db),  # Add probabilistic handler
             TimeSeriesCommandHandler(self.db),  # Add time series handler
+            JSONCommandHandler(self.db),  # Add JSON handler
         ]
         
         for handler in handlers:
@@ -245,7 +247,8 @@ class TCPServer:
                       'BITFIELD',
                       'PFADD', 'PFMERGE',
                       'BF.RESERVE', 'BF.ADD',
-                      'TS.CREATE', 'TS.ADD']:  # Add time series write commands
+                      'TS.CREATE', 'TS.ADD',  # Add time series write commands
+                      'JSON.SET', 'JSON.DEL', 'JSON.ARRAPPEND']:  # Add JSON write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 
