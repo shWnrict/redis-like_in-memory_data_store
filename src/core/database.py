@@ -8,6 +8,7 @@ from datatypes.list import ListDataType
 from datatypes.set import SetDataType
 from datatypes.hash import HashDataType
 from datatypes.zset import ZSetDataType
+from datatypes.advanced.stream import StreamDataType
 import threading
 import time
 
@@ -23,6 +24,7 @@ class KeyValueStore:
         self.sets = SetDataType(self)  # Rename from 'set' to 'sets' to avoid conflict
         self.hash = HashDataType(self)  # Initialize hash operations
         self.zset = ZSetDataType(self)  # Initialize sorted set operations
+        self.stream = StreamDataType(self)  # Initialize stream operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
@@ -44,12 +46,13 @@ class KeyValueStore:
         if key in self.expiry:
             del self.expiry[key]
         if not self.replaying:
-            # Special handling for different data types in logging
             if isinstance(value, list):
                 log_value = ' '.join(str(x) for x in value)
             elif isinstance(value, set):
                 log_value = ' '.join(sorted(str(x) for x in value))  # Sort for consistent logging
             elif isinstance(value, dict):
+                if 'entries' in value:  # Stream type
+                    return  # Streams handle their own persistence
                 log_value = ' '.join(f"{k} {v}" for k, v in sorted(value.items()))
             else:
                 log_value = value
