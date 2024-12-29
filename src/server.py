@@ -20,6 +20,7 @@ from commands.geo_handler import GeoCommandHandler
 from commands.bitmap_handler import BitMapCommandHandler
 from commands.bitfield_handler import BitFieldCommandHandler
 from commands.probabilistic_handler import ProbabilisticCommandHandler
+from commands.timeseries_handler import TimeSeriesCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -56,6 +57,7 @@ class TCPServer:
             BitMapCommandHandler(self.db),  # Add bitmap handler
             BitFieldCommandHandler(self.db),  # Add bitfield handler
             ProbabilisticCommandHandler(self.db),  # Add probabilistic handler
+            TimeSeriesCommandHandler(self.db),  # Add time series handler
         ]
         
         for handler in handlers:
@@ -242,7 +244,8 @@ class TCPServer:
                       'SETBIT', 'BITOP',
                       'BITFIELD',
                       'PFADD', 'PFMERGE',
-                      'BF.RESERVE', 'BF.ADD']:  # Add Bloom filter write commands
+                      'BF.RESERVE', 'BF.ADD',
+                      'TS.CREATE', 'TS.ADD']:  # Add time series write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 
