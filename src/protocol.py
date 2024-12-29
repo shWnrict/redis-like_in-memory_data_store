@@ -19,9 +19,10 @@ def parse_resp(data):
             for _ in range(num_args):
                 if parts[i].startswith('$'):
                     length = int(parts[i][1:])
-                    args.append(parts[i + 1])
+                    if length >= 0:
+                        args.append(parts[i + 1])
                     i += 2
-            return args
+            return args if args else None
         elif parts[0].startswith('$'):
             length = int(parts[0][1:])
             return [parts[1]] if length >= 0 else None
@@ -31,18 +32,23 @@ def parse_resp(data):
             return [int(parts[0][1:])]
         else:
             return None
-    except (IndexError, ValueError):
+    except (IndexError, ValueError) as e:
+        print(f"Error parsing RESP: {e}")
         return data.strip().split()
 
 def format_resp(data):
     """Format Python objects into RESP."""
-    if isinstance(data, str):
+    if data is None:
+        return "+OK\r\n"  # Return OK for successful operations with no return value
+    elif isinstance(data, str):
+        if data.startswith("ERROR"):
+            return f"-{data[6:]}\r\n"  # Convert ERROR: prefix to error response
         return f"+{data}\r\n"
     elif isinstance(data, int):
         return f":{data}\r\n"
-    elif isinstance(data, RESPError):
-        return f"-{str(data)}\r\n"
     elif isinstance(data, list):
+        if not data:
+            return "*0\r\n"
         parts = [f"*{len(data)}\r\n"]
         for item in data:
             if isinstance(item, str):
@@ -50,12 +56,9 @@ def format_resp(data):
             else:
                 parts.append(format_resp(item))
         return "".join(parts)
-    elif data is None:
-        return "$-1\r\n"
     else:
-        # Treat everything else as bulk string
-        data = str(data)
-        return f"${len(data)}\r\n{data}\r\n"
+        data_str = str(data)
+        return f"${len(data_str)}\r\n{data_str}\r\n"
 
 def format_pubsub_message(message_type, channel, data=None):
     """Format Pub/Sub messages according to Redis protocol."""

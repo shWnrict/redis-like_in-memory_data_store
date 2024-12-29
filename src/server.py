@@ -9,6 +9,8 @@ from commands.string_handler import StringCommandHandler
 from commands.transaction_handler import TransactionCommandHandler
 from pubsub import PubSubManager
 from collections import defaultdict
+from replication import ReplicationManager
+import pickle
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -23,6 +25,8 @@ class TCPServer:
         self.subscribed_clients = set()
         self.client_sockets = {}
         self.client_channels = defaultdict(set)
+        self.replication_manager = ReplicationManager(self)
+        self.slaves = set()
         
         self.command_map = {}
         self._init_command_handlers()
@@ -38,6 +42,11 @@ class TCPServer:
         
         for handler in handlers:
             self.command_map.update(handler.get_commands())
+        
+        self.command_map.update({
+            'SLAVEOF': self.handle_slaveof,
+            'SYNC': self.handle_sync,
+        })
 
     def start(self):
         print(f"Server started on {self.host}:{self.port}")
@@ -112,7 +121,7 @@ class TCPServer:
     def handle_client_data(self, client_socket):
         """Handle data from a connected client."""
         try:
-            data = client_socket.recv(1024).decode()
+            data = client_socket.recv(1024).decode().strip()
             if not data:
                 raise ConnectionError("Client disconnected")
                 
@@ -133,10 +142,13 @@ class TCPServer:
                     client_socket.sendall(format_pubsub_message("subscribe", channel).encode())
                     return
             
-            if response is not None:
-                client_socket.sendall(format_resp(response).encode())
+            # Format and send response
+            formatted_response = format_resp(response)
+            if formatted_response:
+                client_socket.sendall(formatted_response.encode())
                 
-        except Exception:
+        except Exception as e:
+            print(f"Error handling client data: {e}")
             raise
 
     def cleanup_client_by_socket(self, client_socket):
@@ -202,9 +214,66 @@ class TCPServer:
             if result is not None:
                 return result
 
+        # Add replication for write commands
+        if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE']:
+            self.replicate_to_slaves(' '.join([command] + [str(arg) for arg in args]))
+
         # Normal command execution
         if command in self.command_map:
             return self.command_map[command](client_id, *args)
         return f"ERROR: Unknown command {command}"
+
+    def handle_slaveof(self, client_id, *args):
+        """Handle SLAVEOF command."""
+        if len(args) != 2:
+            return "ERROR: SLAVEOF requires HOST and PORT"
+            
+        host, port = args
+        try:
+            port = int(port)
+            if host.upper() == "NO" and port == 1:  # SLAVEOF NO ONE
+                self.replication_manager.stop()
+                return "OK"
+                
+            if self.replication_manager.set_as_slave(host, port):
+                return "OK"
+            return "ERROR: Could not connect to master"
+        except ValueError:
+            return "ERROR: Invalid port number"
+
+    def handle_sync(self, client_id, *args):
+        """Handle SYNC command from slave."""
+        if not client_id:
+            return "ERROR: No client ID"
+            
+        client_socket = self.client_sockets.get(client_id)
+        if not client_socket:
+            return "ERROR: Client not found"
+            
+        # Add to slaves set
+        self.slaves.add(client_id)
+        
+        # Send full sync command
+        client_socket.sendall(format_resp("FULLSYNC").encode())
+        
+        # Serialize current database state
+        data = self.db.get_snapshot()
+        serialized = pickle.dumps(data)
+        
+        # Send size followed by data
+        client_socket.sendall(format_resp(str(len(serialized))).encode())
+        client_socket.sendall(serialized)
+        
+        return None  # Don't send additional response
+
+    def replicate_to_slaves(self, command):
+        """Send command to all slaves."""
+        for slave_id in self.slaves.copy():
+            try:
+                slave_socket = self.client_sockets.get(slave_id)
+                if slave_socket:
+                    slave_socket.sendall(format_resp(command).encode())
+            except Exception:
+                self.slaves.discard(slave_id)
 
 

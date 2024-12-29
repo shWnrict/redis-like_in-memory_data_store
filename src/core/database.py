@@ -65,3 +65,15 @@ class KeyValueStore:
         """Stop the managers and persistence."""
         self.expiry_manager.stop()
         self.persistence_manager.close()
+
+    def get_snapshot(self):
+        """Get current database state for replication."""
+        return {
+            'store': dict(self.store),
+            'expiry': dict(self.expiry)
+        }
+
+    def restore_from_master(self, data):
+        """Restore database state from master."""
+        self.store = data['store']
+        self.expiry = data['expiry']
