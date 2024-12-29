@@ -10,7 +10,8 @@ from datatypes.hash import HashDataType
 from datatypes.zset import ZSetDataType
 from datatypes.advanced.stream import StreamDataType
 from datatypes.advanced.geo import GeoDataType
-from datatypes.bitmap import BitMapDataType
+from datatypes.advanced.bitmap import BitMapDataType
+from datatypes.advanced.bitfield import BitFieldDataType
 import threading
 import time
 
@@ -29,6 +30,7 @@ class KeyValueStore:
         self.stream = StreamDataType(self)  # Initialize stream operations
         self.geo = GeoDataType(self)  # Initialize geo operations
         self.bitmap = BitMapDataType(self)  # Initialize bitmap operations
+        self.bitfield = BitFieldDataType(self)  # Initialize bitfield operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay

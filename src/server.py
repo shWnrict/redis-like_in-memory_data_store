@@ -18,6 +18,7 @@ from commands.zset_handler import ZSetCommandHandler
 from commands.stream_handler import StreamCommandHandler
 from commands.geo_handler import GeoCommandHandler
 from commands.bitmap_handler import BitMapCommandHandler
+from commands.bitfield_handler import BitFieldCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -52,6 +53,7 @@ class TCPServer:
             StreamCommandHandler(self.db),  # Add stream handler
             GeoCommandHandler(self.db),  # Add geo handler
             BitMapCommandHandler(self.db),  # Add bitmap handler
+            BitFieldCommandHandler(self.db),  # Add bitfield handler
         ]
         
         for handler in handlers:
@@ -235,7 +237,8 @@ class TCPServer:
                       'ZADD', 'ZREM',
                       'XADD', 'XGROUP', 'XACK',
                       'GEOADD',
-                      'SETBIT', 'BITOP']:  # Add bitmap write commands
+                      'SETBIT', 'BITOP',
+                      'BITFIELD']:  # Add bitfield write command
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 
