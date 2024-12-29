@@ -12,6 +12,7 @@ from datatypes.advanced.stream import StreamDataType
 from datatypes.advanced.geo import GeoDataType
 from datatypes.advanced.bitmap import BitMapDataType
 from datatypes.advanced.bitfield import BitFieldDataType
+from datatypes.advanced.probabilistic import ProbabilisticDataType
 import threading
 import time
 
@@ -31,6 +32,7 @@ class KeyValueStore:
         self.geo = GeoDataType(self)  # Initialize geo operations
         self.bitmap = BitMapDataType(self)  # Initialize bitmap operations
         self.bitfield = BitFieldDataType(self)  # Initialize bitfield operations
+        self.probabilistic = ProbabilisticDataType(self)  # Initialize probabilistic operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
