@@ -214,9 +214,10 @@ class TCPServer:
             if result is not None:
                 return result
 
-        # Add replication for write commands
+        # Add replication for write commands before execution
         if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE']:
-            self.replicate_to_slaves(' '.join([command] + [str(arg) for arg in args]))
+            full_command = [command] + [str(arg) for arg in args]
+            self.replicate_to_slaves(' '.join(full_command))
 
         # Normal command execution
         if command in self.command_map:
@@ -268,12 +269,17 @@ class TCPServer:
 
     def replicate_to_slaves(self, command):
         """Send command to all slaves."""
+        if not self.slaves:
+            return
+            
+        formatted_cmd = format_resp(command.split())
         for slave_id in self.slaves.copy():
             try:
                 slave_socket = self.client_sockets.get(slave_id)
                 if slave_socket:
-                    slave_socket.sendall(format_resp(command).encode())
-            except Exception:
+                    slave_socket.sendall(formatted_cmd.encode())
+            except Exception as e:
+                print(f"Failed to replicate to slave {slave_id}: {e}")
                 self.slaves.discard(slave_id)
 
 

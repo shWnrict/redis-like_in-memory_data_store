@@ -75,5 +75,9 @@ class KeyValueStore:
 
     def restore_from_master(self, data):
         """Restore database state from master."""
-        self.store = data['store']
-        self.expiry = data['expiry']
+        self.replaying = True  # Prevent logging during restore
+        try:
+            self.store = data['store']
+            self.expiry = data['expiry']
+        finally:
+            self.replaying = False

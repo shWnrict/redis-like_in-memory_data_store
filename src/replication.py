@@ -35,20 +35,26 @@ class ReplicationManager:
         while self.running:
             try:
                 if not self._connect_to_master():
+                    print("Failed to connect to master, retrying in 1 second...")
                     time.sleep(1)
                     continue
 
+                print("Connected to master, initiating sync...")
                 # Initial sync
                 self._send_command("SYNC")
                 response = self._read_response()
                 
                 if response and response[0] == "FULLSYNC":
-                    self._handle_full_sync()
+                    if not self._handle_full_sync():
+                        print("Full sync failed, retrying...")
+                        continue
                 
+                print("Now receiving real-time updates from master...")
                 # Real-time replication
                 while self.running and self.master_socket:
                     command = self._read_response()
                     if not command:
+                        print("Lost connection to master...")
                         break
                     self._replicate_command(command)
                     
@@ -113,6 +119,7 @@ class ReplicationManager:
                 
             data = pickle.loads(b''.join(chunks))
             self.server.db.restore_from_master(data)
+            print(f"Successfully synced with master. Data size: {size} bytes")
             return True
             
         except Exception as e:
@@ -121,12 +128,27 @@ class ReplicationManager:
 
     def _replicate_command(self, command):
         """Execute replicated command locally."""
-        if not command:
+        if not command or len(command) < 2:
             return
+            
         try:
             cmd_name = command[0].upper()
-            if cmd_name in self.server.command_map:
-                self.server.command_map[cmd_name](None, *command[1:])
+            args = command[1:]
+            
+            # Handle SET commands
+            if cmd_name == 'SET' and len(args) >= 2:
+                self.server.db.set(args[0], args[1])
+            # Handle DEL commands
+            elif cmd_name == 'DEL' and len(args) >= 1:
+                self.server.db.delete(args[0])
+            # Handle other commands through command map
+            elif cmd_name in self.server.command_map:
+                self.server.db.replaying = True
+                try:
+                    self.server.command_map[cmd_name](None, *args)
+                finally:
+                    self.server.db.replaying = False
+                    
         except Exception as e:
             print(f"Replication command error: {e}")
 
