@@ -14,6 +14,7 @@ from commands.string_handler import StringCommandHandler
 from commands.list_handler import ListCommandHandler
 from commands.set_handler import SetCommandHandler
 from commands.hash_handler import HashCommandHandler
+from commands.zset_handler import ZSetCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -44,6 +45,7 @@ class TCPServer:
             ListCommandHandler(self.db),
             SetCommandHandler(self.db),  # Add set handler
             HashCommandHandler(self.db),  # Add hash handler
+            ZSetCommandHandler(self.db),  # Add ZSet handler
         ]
         
         for handler in handlers:
@@ -87,7 +89,6 @@ class TCPServer:
                 except socket.timeout:
                     continue
                 except KeyboardInterrupt:
-                    print("\nShutting down gracefully...")
                     break
                 except Exception as e:
                     if self.shutting_down:
@@ -224,7 +225,8 @@ class TCPServer:
         if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE',
                       'LPUSH', 'RPUSH', 'LPOP', 'RPOP', 'LSET',
                       'SADD', 'SREM',
-                      'HSET', 'HMSET', 'HDEL']:  # Add hash write commands
+                      'HSET', 'HMSET', 'HDEL',
+                      'ZADD', 'ZREM']:  # Add ZSet write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 

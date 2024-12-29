@@ -7,6 +7,7 @@ from datatypes.string import StringDataType
 from datatypes.list import ListDataType
 from datatypes.set import SetDataType
 from datatypes.hash import HashDataType
+from datatypes.zset import ZSetDataType
 import threading
 import time
 
@@ -21,6 +22,7 @@ class KeyValueStore:
         self.list = ListDataType(self)  # Initialize list operations
         self.sets = SetDataType(self)  # Rename from 'set' to 'sets' to avoid conflict
         self.hash = HashDataType(self)  # Initialize hash operations
+        self.zset = ZSetDataType(self)  # Initialize sorted set operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
