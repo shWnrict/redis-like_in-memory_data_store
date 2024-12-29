@@ -92,6 +92,13 @@ class KeyValueStore:
         """Check if a key exists, considering expiry."""
         return key in self.store and not (key in self.expiry and self.expiry[key] <= time.time())
 
+    def flush(self):
+        """Clear all keys from the database."""
+        self.store.clear()
+        self.expiry.clear()
+        if not self.replaying:
+            self.persistence_manager.log_command("FLUSHDB")
+
     def stop(self):
         """Stop the managers and persistence."""
         self.expiry_manager.stop()

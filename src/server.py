@@ -68,6 +68,8 @@ class TCPServer:
         self.command_map.update({
             'SLAVEOF': self.handle_slaveof,
             'SYNC': self.handle_sync,
+            'PING': self.handle_ping,
+            'FLUSHDB': self.handle_flushdb,
         })
 
     def start(self):
@@ -248,7 +250,7 @@ class TCPServer:
                       'PFADD', 'PFMERGE',
                       'BF.RESERVE', 'BF.ADD',
                       'TS.CREATE', 'TS.ADD',  # Add time series write commands
-                      'JSON.SET', 'JSON.DEL', 'JSON.ARRAPPEND']:  # Add JSON write commands
+                      'JSON.SET', 'JSON.DEL', 'JSON.ARRAPPEND']: # Add JSON write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 
@@ -314,5 +316,19 @@ class TCPServer:
             except Exception as e:
                 print(f"Failed to replicate to slave {slave_id}: {e}")
                 self.slaves.discard(slave_id)
+
+    def handle_ping(self, client_id, *args):
+        """Handle PING command."""
+        if len(args) > 1:
+            return "ERROR: PING takes 0 or 1 arguments"
+        return args[0] if args else "PONG"
+
+    def handle_flushdb(self, client_id, *args):
+        """Handle FLUSHDB command."""
+        if args:
+            return "ERROR: FLUSHDB takes no arguments"
+        self.db.flush()
+        self.replicate_to_slaves("FLUSHDB")
+        return "OK"
 
 
