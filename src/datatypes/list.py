@@ -22,6 +22,8 @@ class ListDataType:
             current = self._ensure_list(key)
             for value in values:
                 current.insert(0, str(value))  # Convert value to string
+            if not self.db.replaying:
+                self.db.persistence_manager.log_command(f"LPUSH {key} {' '.join(map(str, values))}")
             self.db.set(key, current)
             return len(current)
         except ValueError:
@@ -33,6 +35,8 @@ class ListDataType:
             current = self._ensure_list(key)
             for value in values:
                 current.append(str(value))  # Convert value to string
+            if not self.db.replaying:
+                self.db.persistence_manager.log_command(f"RPUSH {key} {' '.join(map(str, values))}")
             self.db.set(key, current)
             return len(current)
         except ValueError:
@@ -45,6 +49,8 @@ class ListDataType:
             if not current:
                 return None
             value = current.pop(0)
+            if not self.db.replaying:
+                self.db.persistence_manager.log_command(f"LPOP {key}")
             self.db.set(key, current)
             return value
         except ValueError:
@@ -57,6 +63,8 @@ class ListDataType:
             if not current:
                 return None
             value = current.pop()
+            if not self.db.replaying:
+                self.db.persistence_manager.log_command(f"RPOP {key}")
             self.db.set(key, current)
             return value
         except ValueError:
@@ -87,7 +95,9 @@ class ListDataType:
         try:
             current = self._ensure_list(key)
             if 0 <= index < len(current) or -len(current) <= index < 0:
-                current[index] = value
+                current[index] = str(value)
+                if not self.db.replaying:
+                    self.db.persistence_manager.log_command(f"LSET {key} {index} {value}")
                 self.db.set(key, current)
                 return True
             return False

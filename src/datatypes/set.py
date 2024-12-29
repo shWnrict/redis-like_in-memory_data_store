@@ -18,11 +18,14 @@ class SetDataType:
             current = self._ensure_set(key)
             count = 0
             for member in members:
-                if member not in current:
-                    current.add(str(member))
+                str_member = str(member)
+                if str_member not in current:
+                    current.add(str_member)
                     count += 1
             if count > 0:
                 self.db.store[key] = current
+                if not self.db.replaying:
+                    self.db.persistence_manager.log_command(f"SADD {key} {' '.join(members)}")
             return count
         except ValueError:
             return 0
@@ -38,6 +41,8 @@ class SetDataType:
                     count += 1
             if count > 0:
                 self.db.store[key] = current
+                if not self.db.replaying:
+                    self.db.persistence_manager.log_command(f"SREM {key} {' '.join(members)}")
             return count
         except ValueError:
             return 0

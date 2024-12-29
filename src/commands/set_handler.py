@@ -15,31 +15,31 @@ class SetCommandHandler(BaseCommandHandler):
     def sadd_command(self, client_id, key, *members):
         if not members:
             return "ERROR: Wrong number of arguments"
-        return str(self.db.set.sadd(key, *members))
+        return str(self.db.sets.sadd(key, *members))
 
     def srem_command(self, client_id, key, *members):
         if not members:
             return "ERROR: Wrong number of arguments"
-        return str(self.db.set.srem(key, *members))
+        return str(self.db.sets.srem(key, *members))
 
     def sismember_command(self, client_id, key, member):
-        return "1" if self.db.set.sismember(key, member) else "0"
+        return "1" if self.db.sets.sismember(key, member) else "0"
 
     def smembers_command(self, client_id, key):
-        result = self.db.set.smembers(key)
+        result = self.db.sets.smembers(key)
         return result if result else "(empty set)"
 
     def sinter_command(self, client_id, *keys):
         if not keys:
             return "ERROR: Wrong number of arguments"
-        return self.db.set.sinter(*keys)
+        return self.db.sets.sinter(*keys)
 
     def sunion_command(self, client_id, *keys):
         if not keys:
             return "ERROR: Wrong number of arguments"
-        return self.db.set.sunion(*keys)
+        return self.db.sets.sunion(*keys)
 
     def sdiff_command(self, client_id, *keys):
         if not keys:
             return "ERROR: Wrong number of arguments"
-        return self.db.set.sdiff(*keys)
+        return self.db.sets.sdiff(*keys)

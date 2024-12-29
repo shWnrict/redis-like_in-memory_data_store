@@ -18,7 +18,7 @@ class KeyValueStore:
         self.persistence_manager = PersistenceManager(self)
         self.string = StringDataType(self)  # Initialize string operations
         self.list = ListDataType(self)  # Initialize list operations
-        self.set = SetDataType(self)  # Initialize set operations
+        self.sets = SetDataType(self)  # Rename from 'set' to 'sets' to avoid conflict
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
@@ -40,9 +40,11 @@ class KeyValueStore:
         if key in self.expiry:
             del self.expiry[key]
         if not self.replaying:
-            # Special handling for lists in logging
+            # Special handling for different data types in logging
             if isinstance(value, list):
                 log_value = ' '.join(str(x) for x in value)
+            elif isinstance(value, set):
+                log_value = ' '.join(sorted(str(x) for x in value))  # Sort for consistent logging
             else:
                 log_value = value
             self.persistence_manager.log_command(f"SET {key} {log_value}")
