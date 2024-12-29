@@ -2,15 +2,16 @@
 
 import socket
 import select
+import pickle
+from collections import defaultdict
 from core.database import KeyValueStore
 from protocol import parse_resp, format_resp, format_pubsub_message
-from commands.core_handler import CoreCommandHandler
-from commands.string_handler import StringCommandHandler
-from commands.transaction_handler import TransactionCommandHandler
 from pubsub import PubSubManager
-from collections import defaultdict
 from replication import ReplicationManager
-import pickle
+from commands.core_handler import CoreCommandHandler
+from commands.transaction_handler import TransactionCommandHandler
+from commands.string_handler import StringCommandHandler
+from commands.list_handler import ListCommandHandler
 
 class TCPServer:
     def __init__(self, host='127.0.0.1', port=6379):
@@ -38,6 +39,7 @@ class TCPServer:
             CoreCommandHandler(self.db),
             StringCommandHandler(self.db),
             TransactionCommandHandler(self.db),
+            ListCommandHandler(self.db),  # Add list handler
         ]
         
         for handler in handlers:
@@ -215,7 +217,8 @@ class TCPServer:
                 return result
 
         # Add replication for write commands before execution
-        if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE']:
+        if command in ['SET', 'DEL', 'APPEND', 'INCR', 'DECR', 'INCRBY', 'DECRBY', 'SETRANGE',
+                      'LPUSH', 'RPUSH', 'LPOP', 'RPOP', 'LSET']:  # Add list commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 

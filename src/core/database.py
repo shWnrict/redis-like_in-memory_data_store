@@ -4,6 +4,7 @@ from core.expiry import ExpiryManager
 from core.transaction import TransactionManager
 from core.persistence import PersistenceManager
 from datatypes.string import StringDataType
+from datatypes.list import ListDataType
 import threading
 import time
 
@@ -15,6 +16,7 @@ class KeyValueStore:
         self.transaction_manager = TransactionManager(self)
         self.persistence_manager = PersistenceManager(self)
         self.string = StringDataType(self)  # Initialize string operations
+        self.list = ListDataType(self)  # Initialize list operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
@@ -32,13 +34,16 @@ class KeyValueStore:
 
     def set(self, key, value):
         """Set a key-value pair and log the operation."""
-        if isinstance(value, (list, tuple)):
-            value = ' '.join(map(str, value))
         self.store[key] = value
         if key in self.expiry:
             del self.expiry[key]
         if not self.replaying:
-            self.persistence_manager.log_command(f"SET {key} {value}")
+            # Special handling for lists in logging
+            if isinstance(value, list):
+                log_value = ' '.join(str(x) for x in value)
+            else:
+                log_value = value
+            self.persistence_manager.log_command(f"SET {key} {log_value}")
 
     def get(self, key):
         """Retrieve a key's value, considering expiry."""
