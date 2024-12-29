@@ -6,6 +6,7 @@ from core.persistence import PersistenceManager
 from datatypes.string import StringDataType
 from datatypes.list import ListDataType
 from datatypes.set import SetDataType
+from datatypes.hash import HashDataType
 import threading
 import time
 
@@ -19,6 +20,7 @@ class KeyValueStore:
         self.string = StringDataType(self)  # Initialize string operations
         self.list = ListDataType(self)  # Initialize list operations
         self.sets = SetDataType(self)  # Rename from 'set' to 'sets' to avoid conflict
+        self.hash = HashDataType(self)  # Initialize hash operations
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay
@@ -45,6 +47,8 @@ class KeyValueStore:
                 log_value = ' '.join(str(x) for x in value)
             elif isinstance(value, set):
                 log_value = ' '.join(sorted(str(x) for x in value))  # Sort for consistent logging
+            elif isinstance(value, dict):
+                log_value = ' '.join(f"{k} {v}" for k, v in sorted(value.items()))
             else:
                 log_value = value
             self.persistence_manager.log_command(f"SET {key} {log_value}")
