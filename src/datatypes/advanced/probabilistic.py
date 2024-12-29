@@ -146,3 +146,50 @@ class ProbabilisticDataType:
             return True
         except ValueError:
             return False
+
+    def _ensure_bloom(self, key: str, size: int = None, num_hashes: int = None) -> BloomFilter:
+        """Ensure value at key is a BloomFilter."""
+        if not self.db.exists(key):
+            if size is None:
+                size = 1000  # Default size
+            if num_hashes is None:
+                num_hashes = 4  # Default number of hash functions
+            bf = BloomFilter(size, num_hashes)
+            self.db.store[key] = bf
+            return bf
+        value = self.db.get(key)
+        if not isinstance(value, BloomFilter):
+            raise ValueError("Value is not a BloomFilter")
+        return value
+
+    def bf_reserve(self, key: str, size: int, num_hashes: int) -> bool:
+        """Create a new Bloom filter with specified parameters."""
+        try:
+            if self.db.exists(key):
+                return False
+            bf = BloomFilter(size, num_hashes)
+            self.db.store[key] = bf
+            if not self.db.replaying:
+                self.db.persistence_manager.log_command(f"BF.RESERVE {key} {size} {num_hashes}")
+            return True
+        except ValueError:
+            return False
+
+    def bf_add(self, key: str, item: str) -> int:
+        """Add item to Bloom filter."""
+        try:
+            bf = self._ensure_bloom(key)
+            result = bf.add(item)
+            if result and not self.db.replaying:
+                self.db.persistence_manager.log_command(f"BF.ADD {key} {item}")
+            return 1 if result else 0
+        except ValueError:
+            return 0
+
+    def bf_exists(self, key: str, item: str) -> bool:
+        """Check if item might exist in Bloom filter."""
+        try:
+            bf = self._ensure_bloom(key)
+            return bf.contains(item)
+        except ValueError:
+            return False

@@ -241,7 +241,8 @@ class TCPServer:
                       'GEOADD',
                       'SETBIT', 'BITOP',
                       'BITFIELD',
-                      'PFADD', 'PFMERGE']:  # Add HyperLogLog write commands
+                      'PFADD', 'PFMERGE',
+                      'BF.RESERVE', 'BF.ADD']:  # Add Bloom filter write commands
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 
