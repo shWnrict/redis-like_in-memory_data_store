@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 class HashDataType:
     def __init__(self, database):
         self.db = database
@@ -6,12 +8,15 @@ class HashDataType:
         """Ensure the value at key is a hash (dict)."""
         value = self.db.get(key)
         if value is None:
-            value = {}
+            value = OrderedDict()  # Use OrderedDict instead of dict
             self.db.store[key] = value
             return value
-        if not isinstance(value, dict):
+        if not isinstance(value, (dict, OrderedDict)):
             raise ValueError("Value is not a hash")
-        return value
+        # Convert regular dict to OrderedDict if needed
+        if not isinstance(value, OrderedDict):
+            self.db.store[key] = OrderedDict(value)
+        return self.db.store[key]
 
     def hset(self, key, field, value):
         """Set field in hash stored at key to value."""
@@ -25,17 +30,23 @@ class HashDataType:
         except ValueError:
             return 0
 
-    def hmset(self, key, mapping):
+    def hmset(self, key, mapping: dict) -> int:
         """Set multiple field-value pairs in hash stored at key."""
         try:
             current = self._ensure_hash(key)
-            current.update({k: str(v) for k, v in mapping.items()})
-            if not self.db.replaying:
+            new_fields = 0
+            for field, value in mapping.items():
+                if field not in current:
+                    new_fields += 1
+                current[field] = str(value)  # This will maintain insertion order
+            
+            if new_fields > 0 and not self.db.replaying:
                 fields_values = ' '.join(f"{k} {v}" for k, v in mapping.items())
                 self.db.persistence_manager.log_command(f"HMSET {key} {fields_values}")
-            return True
+            
+            return new_fields
         except ValueError:
-            return False
+            return 0
 
     def hget(self, key, field):
         """Get value of field in hash stored at key."""
@@ -49,10 +60,10 @@ class HashDataType:
         """Get all field-value pairs in hash stored at key."""
         try:
             current = self._ensure_hash(key)
-            # Return flattened list of alternating fields and values
+            # Return flattened list of alternating fields and values in insertion order
             result = []
-            for field in sorted(current.keys()):  # Sort for consistent ordering
-                result.extend([field, current[field]])
+            for field, value in current.items():
+                result.extend([field, value])
             return result
         except ValueError:
             return []
