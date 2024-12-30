@@ -64,16 +64,16 @@ class TCPServer:
             StringCommandHandler(self.db),
             TransactionCommandHandler(self.db),
             ListCommandHandler(self.db),
-            SetCommandHandler(self.db),  # Add set handler
-            HashCommandHandler(self.db),  # Add hash handler
-            ZSetCommandHandler(self.db),  # Add ZSet handler
-            StreamCommandHandler(self.db),  # Add stream handler
-            GeoCommandHandler(self.db),  # Add geo handler
-            BitMapCommandHandler(self.db),  # Add bitmap handler
-            BitFieldCommandHandler(self.db),  # Add bitfield handler
-            ProbabilisticCommandHandler(self.db),  # Add probabilistic handler
-            TimeSeriesCommandHandler(self.db),  # Add time series handler
-            JSONCommandHandler(self.db),  # Add JSON handler
+            SetCommandHandler(self.db),  
+            HashCommandHandler(self.db),  
+            ZSetCommandHandler(self.db), 
+            StreamCommandHandler(self.db),  
+            GeoCommandHandler(self.db),  
+            BitMapCommandHandler(self.db), 
+            BitFieldCommandHandler(self.db),  
+            ProbabilisticCommandHandler(self.db), 
+            TimeSeriesCommandHandler(self.db),  
+            JSONCommandHandler(self.db),  
         ]
         
         for handler in handlers:

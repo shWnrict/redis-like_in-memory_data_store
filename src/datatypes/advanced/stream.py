@@ -15,6 +15,34 @@ class ConsumerGroup:
         self.consumers = collections.defaultdict(int)  # consumer_name -> pending count
 
 class StreamDataType:
+    """
+    StreamDataType provides methods to add, read, and manage stream entries, as well as to handle consumer groups.
+    Attributes:
+        db (Database): The database instance where the stream data is stored.
+        _last_ms (int): The last millisecond timestamp used for generating stream entry IDs.
+        _seq_no (int): The sequence number used for generating stream entry IDs.
+    Methods:
+        __init__(database):
+            Initializes the StreamDataType with the given database.
+        _ensure_stream(key: str) -> Dict:
+            Ensures that the value at the given key is a stream. If not, initializes a new stream.
+        _generate_id() -> str:
+            Generates a unique stream entry ID based on the current timestamp and sequence number.
+        xadd(key: str, fields: Dict[str, str], id: str = '*') -> str:
+            Adds an entry to a stream with the given fields and optional ID. If ID is '*', a new ID is generated.
+        xread(keys: List[str], ids: List[str], count: Optional[int] = None) -> Dict[str, List[Tuple[str, Dict]]]:
+            Reads entries from one or more streams starting from the given IDs. Optionally limits the number of entries.
+        xrange(key: str, start: str = '-', end: str = '+', count: Optional[int] = None) -> List[Tuple[str, Dict]]:
+            Returns a range of entries from a stream between the given start and end IDs. Optionally limits the number of entries.
+        xlen(key: str) -> int:
+            Returns the length of a stream (number of entries).
+        xgroup_create(key: str, group_name: str, id: str = '$', mkstream: bool = False) -> bool:
+            Creates a consumer group for the stream at the given key. Optionally creates the stream if it doesn't exist.
+        xreadgroup(group: str, consumer: str, keys: List[str], ids: List[str], count: Optional[int] = None) -> Dict[str, List[Tuple[str, Dict]]]:
+            Reads entries from a stream as part of a consumer group. Supports reading new messages or from a specific ID.
+        xack(key: str, group: str, *ids: str) -> int:
+            Acknowledges consumed messages in a consumer group, removing them from the pending list.
+    """
     def __init__(self, database):
         self.db = database
         self._last_ms = 0

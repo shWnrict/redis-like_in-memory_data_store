@@ -48,6 +48,25 @@ class Geohash:
         pass
 
 class GeoDataType:
+    """
+    GeoDataType is a class that provides geospatial data storage and querying capabilities similar to Redis' GEO commands.
+    Attributes:
+        EARTH_RADIUS_METERS (float): The Earth's radius in meters, used for distance calculations.
+    Methods:
+        __init__(database):
+            Initializes the GeoDataType instance with a reference to the database.
+        _ensure_geo(key: str) -> Dict:
+            Ensures that the given key in the database is a valid geo index. If the key does not exist, it creates a new geo index.
+        geoadd(key: str, *args) -> int:
+            Adds geospatial items to the geo index. Each item is specified by longitude, latitude, and a member name. Returns the number of new elements added.
+        geosearch(key: str, from_member: Optional[str] = None, lon: Optional[float] = None, lat: Optional[float] = None,
+                  radius: Optional[float] = None, width: Optional[float] = None, height: Optional[float] = None, unit: str = 'm',
+            Searches for members within a specified radius or bounding box from a given point or member. Returns a list of matching members, optionally including their coordinates and distances.
+        geodist(key: str, member1: str, member2: str, unit: str = 'm') -> Optional[str]:
+            Calculates the distance between two members in the specified unit. Returns the distance as a string formatted to four decimal places.
+        _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+            Calculates the Haversine distance between two points specified by their latitude and longitude. Returns the distance in meters.
+    """
     EARTH_RADIUS_METERS = 6372797.560856  # More precise Earth radius in meters
     
     def __init__(self, database):

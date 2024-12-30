@@ -1,10 +1,35 @@
 class ListDataType:
+    """
+    ListDataType is a class that provides list-like operations for an in-memory data store.
+    It ensures that the values associated with keys are lists and provides methods to manipulate these lists.
+    Methods:
+        __init__(database):
+            Initializes the ListDataType with a reference to the database.
+        _ensure_list(key):
+            Ensures that the value at the given key is a list. If the key does not exist, it initializes it with an empty list.
+            Raises a ValueError if the value at the key is not a list.
+        lpush(key, *values):
+            Pushes values to the head of the list at the given key. Returns the length of the list after the operation.
+        rpush(key, *values):
+            Pushes values to the tail of the list at the given key. Returns the length of the list after the operation.
+        lpop(key):
+            Removes and returns the first element of the list at the given key. If the list becomes empty, the key is deleted.
+        rpop(key):
+            Removes and returns the last element of the list at the given key. If the list becomes empty, the key is deleted.
+        lrange(key, start, stop):
+            Returns a range of elements from the list at the given key, from the start index to the stop index (inclusive).
+            Handles negative indices and ensures bounds. If the value at the key is not a list or indices are invalid, returns an error message.
+        lindex(key, index):
+            Returns the element at the given index from the list at the given key. Handles negative indices.
+        lset(key, index, value):
+            Sets the element at the given index to the specified value in the list at the given key. Handles negative indices.
+    """
     def __init__(self, database):
         self.db = database
 
     def _ensure_list(self, key):
         """Ensure the value at key is a list."""
-        value = self.db.store.get(key)  # Direct store access to bypass type check
+        value = self.db.store.get(key) 
         if value is None:
             value = []
             self.db.store[key] = value
@@ -19,8 +44,8 @@ class ListDataType:
             return 0
         try:
             current = self._ensure_list(key)
-            for value in reversed(values):  # Reverse to match Redis behavior
-                current.insert(0, str(value))
+            for value in reversed(values):
+                current.insert(0, value)  # Store as-is without str() conversion
             return len(current)
         except ValueError as e:
             return str(e)
@@ -32,7 +57,7 @@ class ListDataType:
         try:
             current = self._ensure_list(key)
             for value in values:
-                current.append(str(value))
+                current.append(value)  # Store as-is without str() conversion
             return len(current)
         except ValueError as e:
             return str(e)
@@ -115,7 +140,7 @@ class ListDataType:
             if index < 0:
                 index = len(current) + index
             if 0 <= index < len(current):
-                current[index] = str(value)
+                current[index] = value  # Store as-is without str() conversion
                 return "OK"
             return "ERR index out of range"
         except ValueError as e:

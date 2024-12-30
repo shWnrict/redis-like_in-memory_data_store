@@ -1,4 +1,21 @@
 class BitMapDataType:
+    """
+    A class to represent a bitmap data type for an in-memory data store.
+    Attributes:
+    -----------
+    db : object
+        The database instance where the bitmap data is stored.
+    Methods:
+    --------
+    setbit(key: str, offset: int, value: int) -> int:
+        Sets or clears a bit at the specified offset in the string value stored at the given key.
+    getbit(key: str, offset: int) -> int:
+        Gets the bit value at the specified offset in the string value stored at the given key.
+    bitcount(key: str, start: int = None, end: int = None, unit: str = 'BYTE') -> int:
+        Counts the number of set bits (1s) in the string value stored at the given key, optionally within a specified range.
+    bitop(operation: str, dest_key: str, *source_keys: str) -> int:
+        Performs a bitwise operation (AND, OR, XOR, NOT) on the string values stored at the source keys and stores the result at the destination key.
+    """
     def __init__(self, database):
         self.db = database
 

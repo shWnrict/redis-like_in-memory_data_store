@@ -1,6 +1,29 @@
 from collections import OrderedDict
 
 class HashDataType:
+    """
+    HashDataType is a class that provides a Redis-like in-memory data store for hash data structures.
+    It allows for storing, retrieving, and manipulating hash data types, which are essentially dictionaries.
+    Attributes:
+        db (Database): The database instance where the hash data is stored.
+    Methods:
+        _create_hash(key):
+            Create a new hash at the specified key.
+        _validate_hash(key):
+            Validate if the key exists and holds a hash. Raises ValueError if the key holds a different type.
+        hset(key, field, value):
+            Set the field in the hash stored at the key to the specified value. Returns 1 if the field is new, 0 if it was updated.
+        hget(key, field):
+            Get the value of the field in the hash stored at the key. Returns the value or None if the field does not exist.
+        hmset(key, mapping):
+            Set multiple field-value pairs in the hash stored at the key. Returns True if successful.
+        hgetall(key):
+            Get all field-value pairs in the hash stored at the key. Returns a list of alternating fields and values.
+        hdel(key, *fields):
+            Delete the specified fields from the hash stored at the key. Returns the number of fields that were removed.
+        hexists(key, field):
+            Check if the field exists in the hash stored at the key. Returns True if the field exists, False otherwise.
+    """
     def __init__(self, database):
         self.db = database
 

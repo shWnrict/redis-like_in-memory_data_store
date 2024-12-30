@@ -1,4 +1,29 @@
 class StringDataType:
+    """
+    A class to represent string data type operations in an in-memory data store.
+    Attributes:
+    ----------
+    database : object
+        An instance of the database where the data is stored.
+    Methods:
+    -------
+    append(key, value):
+        Appends a value to the string stored at the specified key.
+    strlen(key):
+        Returns the length of the string stored at the specified key.
+    incr(key):
+        Increments the integer value of the specified key by 1.
+    decr(key):
+        Decrements the integer value of the specified key by 1.
+    incrby(key, increment):
+        Increments the integer value of the specified key by a given amount.
+    decrby(key, decrement):
+        Decrements the integer value of the specified key by a given amount.
+    getrange(key, start, end):
+        Returns a substring of the string stored at the specified key, based on the provided start and end indices.
+    setrange(key, offset, value):
+        Overwrites part of the string stored at the specified key, starting at the given offset.
+    """
     def __init__(self, database):
         self.database = database
 
@@ -49,7 +74,7 @@ class StringDataType:
             if value is None:
                 return ""
             if not isinstance(value, str):
-                return "ERROR: Value at key is not a string"  # Changed to match test expectation
+                return "ERROR: Value at key is not a string"
             
             start = int(start)
             end = int(end)
@@ -60,7 +85,6 @@ class StringDataType:
             if end < 0:
                 end = len(value) + end
             
-            # Adjust end to be inclusive (Redis behavior)
             end += 1
             
             # Ensure we don't go out of bounds
@@ -88,7 +112,6 @@ class StringDataType:
             if offset > len(current):
                 current = current + "\0" * (offset - len(current))
             
-            # Construct new value
             new_value = current[:offset] + str(value)
             if offset + len(str(value)) < len(current):
                 new_value += current[offset + len(str(value)):]

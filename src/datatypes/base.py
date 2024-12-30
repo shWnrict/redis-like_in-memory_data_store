@@ -2,6 +2,18 @@
 # datatypes/base.py
 
 class BaseDataType:
+    """
+    BaseDataType is a simple in-memory data store that mimics basic functionalities of a key-value store.
+    Attributes:
+        data (dict): A dictionary to store key-value pairs.
+    Methods:
+        set(key, value):
+            Sets a key-value pair in the data store.
+        get(key):
+            Retrieves the value associated with the given key.
+        delete(key):
+            Deletes the key-value pair from the data store.
+    """
     def __init__(self):
         self.data = {}
 

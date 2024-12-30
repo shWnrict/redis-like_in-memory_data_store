@@ -84,6 +84,29 @@ class BloomFilter:
         return all(self.bits[pos] for pos in self._get_hash_values(item))
 
 class ProbabilisticDataType:
+    """
+    ProbabilisticDataType is a class that provides methods to interact with probabilistic data structures
+    such as HyperLogLog and Bloom Filter within an in-memory database. 
+    Methods:
+        __init__(database):
+            Initializes the ProbabilisticDataType with a reference to the database.
+        _ensure_hll(key: str) -> HyperLogLog:
+            Ensures that the value at the given key is a HyperLogLog. If not, it initializes a new HyperLogLog.
+        pfadd(key: str, *elements: str) -> int:
+            Adds elements to the HyperLogLog at the specified key. Returns 1 if the HyperLogLog was modified, otherwise 0.
+        pfcount(*keys: str) -> int:
+            Returns the cardinality estimate for one or more HyperLogLogs. If multiple keys are provided, it merges them before counting.
+        pfmerge(destkey: str, *sourcekeys: str) -> bool:
+            Merges multiple HyperLogLogs into a new one at the destination key. Returns True if successful, otherwise False.
+        _ensure_bloom(key: str, size: int = None, num_hashes: int = None) -> BloomFilter:
+            Ensures that the value at the given key is a BloomFilter. If not, it initializes a new BloomFilter with the specified size and number of hash functions.
+        bf_reserve(key: str, size: int, num_hashes: int) -> bool:
+            Creates a new Bloom filter with the specified parameters at the given key. Returns True if successful, otherwise False.
+        bf_add(key: str, item: str) -> int:
+            Adds an item to the Bloom filter at the specified key. Returns 1 if the Bloom filter was modified, otherwise 0.
+        bf_exists(key: str, item: str) -> bool:
+            Checks if an item might exist in the Bloom filter at the specified key. Returns True if the item might exist, otherwise False.
+    """
     def __init__(self, database):
         self.db = database
 

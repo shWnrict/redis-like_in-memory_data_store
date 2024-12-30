@@ -24,10 +24,14 @@ class ListCommandHandler(BaseCommandHandler):
         result = self.db.list.rpush(key, *values)
         return result
 
-    def lpop_command(self, client_id, key):
+    def lpop_command(self, client_id, key, *args):
+        if args:
+            return "ERR wrong number of arguments for 'lpop' command"
         return self.db.list.lpop(key)
 
-    def rpop_command(self, client_id, key):
+    def rpop_command(self, client_id, key, *args):
+        if args:
+            return "ERR wrong number of arguments for 'rpop' command"
         return self.db.list.rpop(key)
 
     def lrange_command(self, client_id, key, start, stop):
@@ -35,7 +39,7 @@ class ListCommandHandler(BaseCommandHandler):
             result = self.db.list.lrange(key, start, stop)
             if isinstance(result, str) and result.startswith("ERR"):
                 return result
-            return result
+            return result if result else []  # Return empty list instead of None
         except Exception as e:
             return f"ERR {str(e)}"
 

@@ -1,6 +1,33 @@
 from typing import Tuple, Optional
 
 class BitFieldDataType:
+    """
+    BitFieldDataType is a class that provides methods to manipulate bitfields stored in a database. 
+    It allows for getting, setting, and incrementing integer values within a bitfield, which is stored as a byte array.
+    Attributes:
+        db: The database instance where the bitfield data is stored.
+    Methods:
+        __init__(database):
+            Initializes the BitFieldDataType with the given database.
+        _get_bytes(key: str) -> bytearray:
+            Retrieves the byte array associated with the given key from the database.
+        _set_bytes(key: str, bytes_array: bytearray):
+            Stores the given byte array in the database under the specified key.
+        _get_bits(data: bytearray, offset: int, bits: int, unsigned: bool = True) -> int:
+            Extracts a specified number of bits from the byte array starting at a given bit offset.
+        _set_bits(data: bytearray, offset: int, bits: int, value: int, unsigned: bool = True) -> int:
+            Sets a specified number of bits in the byte array starting at a given bit offset.
+        _parse_offset(offset_str: str) -> int:
+            Parses the offset string, which may be hash-based (#N) or numeric, into an integer offset.
+        _parse_type(type_spec: str) -> Tuple[bool, int]:
+            Parses the type specifier (e.g., 'u8', 'i16') into a tuple indicating whether it is unsigned and the number of bits.
+        get(key: str, type_spec: str, offset: str) -> Optional[int]:
+            Retrieves an integer value from the bitfield at the specified offset and type.
+        set(key: str, type_spec: str, offset: str, value: int) -> Optional[int]:
+            Sets an integer value in the bitfield at the specified offset and type, returning the old value.
+        incrby(key: str, type_spec: str, offset: str, increment: int) -> Optional[int]:
+            Increments an integer value in the bitfield at the specified offset and type by a given increment, returning the new value.
+    """
     def __init__(self, database):
         self.db = database
 

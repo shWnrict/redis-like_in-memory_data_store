@@ -2,6 +2,24 @@ import json
 from typing import Any, Optional, List, Union
 
 class JSONPath:
+    """
+    JSONPath is a utility class for parsing, setting, getting, and deleting values in a JSON-like object using JSONPath syntax.
+    Methods:
+        parse_path(path: str) -> List[str]:
+            Parse a JSON path into components.
+        set_value(obj: Any, path: str, value: Any) -> bool:
+            Set value at path in object.
+        _set_recursive(obj: Any, field: str, value: Any) -> bool:
+            Recursively set value for all matching fields.
+        get_value(obj: Any, path: str) -> Any:
+            Get value at path from object.
+        _get_recursive(obj: Any, field: str) -> List[Any]:
+            Recursively get all values matching the field.
+        delete_value(obj: Any, path: str) -> bool:
+            Delete value at path from object.
+        _delete_recursive(obj: Any, field: str) -> bool:
+            Recursively delete all values matching the field.
+    """
     @staticmethod
     def parse_path(path: str) -> List[str]:
         """Parse a JSON path into components."""

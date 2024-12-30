@@ -13,6 +13,32 @@ class TSAggregationType(Enum):
     LAST = 'last'
 
 class TimeSeries:
+    """
+    A class to represent a time series data structure with support for retention policies,
+    duplicate handling, and downsampling.
+    Attributes:
+    -----------
+    samples : list
+        A list of (timestamp, value) tuples representing the time series data points.
+    retention_ms : int
+        The retention period in milliseconds. Samples older than this period will be removed.
+    duplicate_policy : str
+        The policy for handling duplicate timestamps. Options are 'LAST', 'FIRST', and 'BLOCK'.
+    labels : dict
+        Metadata labels associated with the time series.
+    rules : list
+        Downsampling rules defined as (dest_key, aggregation, bucket_size_ms) tuples.
+    Methods:
+    --------
+    _cleanup_samples(current_time_ms: int):
+        Remove samples older than the retention period.
+    add_sample(timestamp_ms: int, value: float) -> bool:
+        Add a new sample to the time series, handling duplicates according to the policy.
+    get_sample(timestamp_ms: Optional[int] = None) -> Optional[Tuple[int, float]]:
+        Get the sample at or closest to the given timestamp.
+    range(from_ts: int, to_ts: int, aggregation: Optional[TSAggregationType] = None,
+        Get a range of samples with optional downsampling.
+    """
     def __init__(self, retention_ms: int = 0, duplicate_policy: str = 'LAST'):
         self.samples = []  # List of (timestamp, value) tuples
         self.retention_ms = retention_ms

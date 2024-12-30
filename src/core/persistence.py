@@ -98,7 +98,7 @@ class SnapshotManager:
                 'timestamp': time.time()
             }
             with open(temp_path, 'wb') as f:
-                pickle.dump(snapshot_data, f, protocol=4)  # Use protocol 4 for better compatibility
+                pickle.dump(snapshot_data, f, protocol=4)
             os.replace(temp_path, self.snapshot_path)
             return True
         except Exception as e:
