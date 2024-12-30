@@ -4,89 +4,92 @@ class HashDataType:
     def __init__(self, database):
         self.db = database
 
-    def _ensure_hash(self, key):
-        """Ensure the value at key is a hash (dict)."""
-        value = self.db.get(key)
-        if value is None:
-            value = OrderedDict()  # Use OrderedDict instead of dict
-            self.db.store[key] = value
-            return value
-        if not isinstance(value, (dict, OrderedDict)):
-            raise ValueError("Value is not a hash")
-        # Convert regular dict to OrderedDict if needed
-        if not isinstance(value, OrderedDict):
-            self.db.store[key] = OrderedDict(value)
-        return self.db.store[key]
+    def _create_hash(self, key):
+        """Create a new hash at key."""
+        hash_dict = {}
+        self.db.store[key] = hash_dict
+        return hash_dict
+
+    def _validate_hash(self, key):
+        """Validate if key exists and holds a hash."""
+        if not self.db.exists(key):
+            return None
+        value = self.db.store.get(key)
+        if not isinstance(value, dict):
+            raise ValueError("WRONGTYPE Operation against a key holding the wrong kind of value")
+        return value
 
     def hset(self, key, field, value):
         """Set field in hash stored at key to value."""
         try:
-            current = self._ensure_hash(key)
-            is_new = field not in current
-            current[field] = str(value)
+            hash_dict = self._validate_hash(key) or self._create_hash(key)
+            is_new = field not in hash_dict
+            hash_dict[field] = str(value)
             if not self.db.replaying:
                 self.db.persistence_manager.log_command(f"HSET {key} {field} {value}")
             return 1 if is_new else 0
-        except ValueError:
-            return 0
-
-    def hmset(self, key, mapping: dict) -> int:
-        """Set multiple field-value pairs in hash stored at key."""
-        try:
-            current = self._ensure_hash(key)
-            new_fields = 0
-            for field, value in mapping.items():
-                if field not in current:
-                    new_fields += 1
-                current[field] = str(value)  # This will maintain insertion order
-            
-            if new_fields > 0 and not self.db.replaying:
-                fields_values = ' '.join(f"{k} {v}" for k, v in mapping.items())
-                self.db.persistence_manager.log_command(f"HMSET {key} {fields_values}")
-            
-            return new_fields
-        except ValueError:
-            return 0
+        except ValueError as e:
+            return str(e)
 
     def hget(self, key, field):
         """Get value of field in hash stored at key."""
         try:
-            current = self._ensure_hash(key)
-            return current.get(field)
-        except ValueError:
-            return None
+            hash_dict = self._validate_hash(key)
+            return hash_dict.get(field) if hash_dict else None
+        except ValueError as e:
+            return str(e)
+
+    def hmset(self, key, mapping):
+        """Set multiple field-value pairs in hash stored at key."""
+        try:
+            hash_dict = self._validate_hash(key) or self._create_hash(key)
+            for field, value in mapping.items():
+                hash_dict[field] = str(value)
+            if not self.db.replaying:
+                fields_values = ' '.join(f"{k} {v}" for k, v in mapping.items())
+                self.db.persistence_manager.log_command(f"HMSET {key} {fields_values}")
+            return True
+        except ValueError as e:
+            return str(e)
 
     def hgetall(self, key):
         """Get all field-value pairs in hash stored at key."""
         try:
-            current = self._ensure_hash(key)
-            # Return flattened list of alternating fields and values in insertion order
+            hash_dict = self._validate_hash(key)
+            if not hash_dict:
+                return []
+            # Return flattened list of alternating fields and values
             result = []
-            for field, value in current.items():
+            for field, value in hash_dict.items():
                 result.extend([field, value])
             return result
-        except ValueError:
-            return []
+        except ValueError as e:
+            return str(e)
 
     def hdel(self, key, *fields):
         """Delete fields from hash stored at key."""
         try:
-            current = self._ensure_hash(key)
+            hash_dict = self._validate_hash(key)
+            if not hash_dict:
+                return 0
             count = 0
             for field in fields:
-                if field in current:
-                    del current[field]
+                if field in hash_dict:
+                    del hash_dict[field]
                     count += 1
-            if count and not self.db.replaying:
-                self.db.persistence_manager.log_command(f"HDEL {key} {' '.join(fields)}")
+            if count > 0:
+                if len(hash_dict) == 0:
+                    self.db.delete(key)
+                if not self.db.replaying:
+                    self.db.persistence_manager.log_command(f"HDEL {key} {' '.join(fields)}")
             return count
-        except ValueError:
-            return 0
+        except ValueError as e:
+            return str(e)
 
     def hexists(self, key, field):
         """Check if field exists in hash stored at key."""
         try:
-            current = self._ensure_hash(key)
-            return field in current
+            hash_dict = self._validate_hash(key)
+            return bool(hash_dict and field in hash_dict)
         except ValueError:
             return False

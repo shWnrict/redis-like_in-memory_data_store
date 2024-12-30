@@ -92,13 +92,16 @@ GET mykey
 | LSET | LSET mylist 0 "Updated" | OK |
 
 ```shell
-LPUSH mylist "One"
-RPUSH mylist "Two"
+LPUSH mylist "one"
+LPUSH mylist "two"
+RPUSH mylist "three"
+RPUSH mylist "four"
 LPOP mylist
 RPOP mylist
 LRANGE mylist 0 -1
-LINDEX mylist 0
-LSET mylist 0 "Updated"
+LINDEX mylist 1
+LSET mylist 1 "new_value"
+
 ```
 
 #### Set Operations: Unique element collections
@@ -114,13 +117,19 @@ LSET mylist 0 "Updated"
 | SDIFF | SDIFF set1 set2 | 1) "Orange" |
 
 ```shell
-SADD myset "Apple"
-SREM myset "Apple"
-SISMEMBER myset "Apple"
+SADD myset "one"
+SADD myset "two"
+SADD myset "three"
+SREM myset "two"
+SISMEMBER myset "one"
+SISMEMBER myset "four"
 SMEMBERS myset
-SINTER set1 set2
-SUNION set1 set2
-SDIFF set1 set2
+SADD myset2 "three"
+SADD myset2 "four"
+SINTER myset myset2
+SUNION myset myset2
+SDIFF myset myset2
+
 ```
 
 #### Hash Operations: Field-value pair storage

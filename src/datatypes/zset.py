@@ -166,60 +166,59 @@ class ZSetDataType:
             value = {'dict': {}, 'skiplist': SkipList()}
             self.db.store[key] = value
             return value
-        value = self.db.get(key)
+        value = self.db.store.get(key)
         if not isinstance(value, dict) or 'dict' not in value or 'skiplist' not in value:
-            raise ValueError("Value is not a sorted set")
+            raise ValueError("WRONGTYPE Operation against a key holding the wrong kind of value")
         return value
 
-    def _format_score(self, score: float) -> str:
-        """Format score to remove unnecessary decimal places."""
-        if score.is_integer():
-            return str(int(score))
-        return str(score)
-
-    def zadd(self, key: str, *args) -> int:
+    def zadd(self, key, *args):
         """Add members to sorted set."""
         if len(args) % 2 != 0:
-            raise ValueError("ZADD requires score-member pairs")
+            raise ValueError("ERR syntax error")
         
         try:
             zset = self._ensure_zset(key)
             added = 0
-            pairs = list(zip(args[::2], args[1::2]))
             
-            for score_str, member in pairs:
-                try:
-                    score = float(score_str)
-                except ValueError:
-                    continue
+            # Process score-member pairs
+            i = 0
+            while i < len(args):
+                score = float(args[i])
+                member = str(args[i + 1])
                 
                 if member not in zset['dict']:
                     added += 1
-                
-                # Always update the skiplist
+                elif zset['dict'][member] == score:
+                    i += 2
+                    continue
+                    
+                # Update or add member
                 if member in zset['dict']:
                     zset['skiplist'].delete(zset['dict'][member], member)
                 zset['dict'][member] = score
                 zset['skiplist'].insert(score, member)
+                
+                i += 2
             
-            if added and not self.db.replaying:
-                args_str = ' '.join(str(x) for x in args)
-                self.db.persistence_manager.log_command(f"ZADD {key} {args_str}")
+            if added > 0 and not self.db.replaying:
+                self.db.persistence_manager.log_command(f"ZADD {key} {' '.join(map(str, args))}")
             
             return added
-        except ValueError:
-            return 0
+        except ValueError as e:
+            raise ValueError(f"ERR {str(e)}")
 
-    def zrange(self, key: str, start: int, stop: int, withscores: bool = False) -> List:
+    def zrange(self, key, start, stop, withscores=False):
         """Return range of members by index."""
         try:
             zset = self._ensure_zset(key)
-            range_result = zset['skiplist'].get_range(int(start), int(stop))
+            result = zset['skiplist'].get_range(start, stop)
+            if not result:
+                return []
             if withscores:
-                return [(member, self._format_score(score)) for member, score in range_result]
-            return [member for member, _ in range_result]
-        except ValueError:
-            return []
+                return [(item[0], str(item[1])) for item in result]
+            return [item[0] for item in result]
+        except ValueError as e:
+            return str(e)
 
     def zrank(self, key: str, member: str) -> Optional[int]:
         """Return rank of member in sorted set."""
