@@ -237,8 +237,7 @@ https://redis.io/docs/latest/commands/geodist/
 ```shell
 GEOADD Sicily 13.361389 38.115556 "Palermo" 15.087269 37.502669 "Catania"
 GEODIST Sicily Palermo Catania
-GEORADIUS Sicily 15 37 100 km
-GEORADIUS Sicily 15 37 200 km
+GEOSEARCH Sicily FROMLONLAT 15 37 BYRADIUS 100 km WITHCOORD WITHDIST
 ```
 
 #### Bitmap & Bitfield Operations: Bit-level manipulations
