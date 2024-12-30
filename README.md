@@ -17,8 +17,7 @@ A custom implementation of a redis-like in-memory data store using Python. This 
     - Streams
     - Geospatial
     - Bitmaps
-    - Bitfields
-    - Probabilistic (HyperLogLog, Bloom Filter)
+    - HyperLogLog
     - Time-Series data
 - **Pub/Sub Mechanism**
 - **Data Persistence support** (AOF, Snapshots)
@@ -185,7 +184,7 @@ redis-cli
 | GEOSEARCH | Search radius | GEOSEARCH key FROMLONLAT longitude latitude BYRADIUS radius unit |
 | GEODIST | Get distance between points | GEODIST key member1 member2 [unit] |
 
-#### Bitmap & Bitfield Operations: Bit-level manipulations
+#### Bitmap: Bit-level manipulations
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
@@ -193,15 +192,11 @@ redis-cli
 | GETBIT | Get bit value | GETBIT key offset |
 | BITCOUNT | Count set bits | BITCOUNT key [start end] |
 | BITOP | Bitwise operations | BITOP operation destkey key [key ...] |
-| BITFIELD | Operate on bitmap segments | BITFIELD key GET type offset |
 
-#### Probabilistic Operations: Bloom filters and HyperLogLog
+#### HyperLogLog: Probabilistic Operations
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| BF.RESERVE | Create Bloom filter | BF.RESERVE key error_rate initial_size |
-| BF.ADD | Add to Bloom filter | BF.ADD key item |
-| BF.EXISTS | Check Bloom filter | BF.EXISTS key item |
 | PFADD | Add to HyperLogLog | PFADD key element [element ...] |
 | PFCOUNT | Get HyperLogLog count | PFCOUNT key [key ...] |
 | PFMERGE | Merge HyperLogLogs | PFMERGE destkey sourcekey [sourcekey ...] |

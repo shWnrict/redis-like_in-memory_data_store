@@ -240,7 +240,7 @@ GEODIST Sicily Palermo Catania
 GEOSEARCH Sicily FROMLONLAT 15 37 BYRADIUS 100 km WITHCOORD WITHDIST
 ```
 
-#### Bitmap & Bitfield Operations: Bit-level manipulations
+#### Bitmap: Bit-level manipulations
 
 | Command | Sample Input | Expected Output |
 |---------|--------------|-----------------|
@@ -250,29 +250,37 @@ GEOSEARCH Sicily FROMLONLAT 15 37 BYRADIUS 100 km WITHCOORD WITHDIST
 | BITOP | BITOP AND destkey mybitkey1 mybitkey2 | (integer) 5 |
 | BITFIELD | BITFIELD mybitkey GET i8 0 | (array) [ 5 ] |
 
+https://redis.io/docs/latest/commands/setbit/
+https://redis.io/docs/latest/commands/getbit/
+https://redis.io/docs/latest/commands/bitcount/
+https://redis.io/docs/latest/commands/bitop/
+
 ```shell
 SETBIT mybitkey 7 1
 GETBIT mybitkey 7
 BITCOUNT mybitkey
-BITOP AND destkey mybitkey1 mybitkey2
-BITFIELD mybitkey GET i8 0
+```
+
+BITCOUNT: Count the number of set bits (population counting) in a string.
+
+```shell
+SET mykey "foobar"
+BITCOUNT mykey
+BITCOUNT mykey 0 0
+BITCOUNT mykey 1 1
+BITCOUNT mykey 1 1 BYTE
+BITCOUNT mykey 5 30 BIT
 ```
 
 #### Probabilistic Operations: Bloom filters and HyperLogLog
 
 | Command | Sample Input | Expected Output |
 |---------|--------------|-----------------|
-| BF.RESERVE | BF.RESERVE mybloomfilter 0.01 1000 | OK |
-| BF.ADD | BF.ADD mybloomfilter "item1" | (integer) 1 |
-| BF.EXISTS | BF.EXISTS mybloomfilter "item1" | (integer) 1 |
 | PFADD | PFADD myhyperloglog "element1" | (integer) 1 |
 | PFCOUNT | PFCOUNT myhyperloglog | (integer) 1 |
 | PFMERGE | PFMERGE mymerged myhyperloglog1 myhyperloglog2 | OK |
 
 ```shell
-BF.RESERVE mybloomfilter 0.01 1000
-BF.ADD mybloomfilter "item1"
-BF.EXISTS mybloomfilter "item1"
 PFADD myhyperloglog "element1"
 PFCOUNT myhyperloglog
 PFMERGE mymerged myhyperloglog1 myhyperloglog2
