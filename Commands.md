@@ -182,23 +182,23 @@ ZRANGEBYSCORE myzset 1 2
 Examples
 Replace an existing value
 ```shell
-redis> JSON.SET doc $ '{"a":2}'
-redis> JSON.SET doc $.a '3'
-redis> JSON.GET doc $
+JSON.SET doc $ '{"a":2}'
+JSON.SET doc $.a '3'
+JSON.GET doc $
 ```
 
 Add a new value
 ```shell
-redis> JSON.SET doc $ '{"a":2}'
-redis> JSON.SET doc $.b '8'
-redis> JSON.GET doc $
+JSON.SET doc $ '{"a":2}'
+JSON.SET doc $.b '8'
+JSON.GET doc $
 ```
 
 Update multi-paths
 ```shell
-redis> JSON.SET doc $ '{"f1": {"a":1}, "f2":{"a":2}}'
-redis> JSON.SET doc $..a 3
-redis> JSON.GET doc
+JSON.SET doc $ '{"f1": {"a":1}, "f2":{"a":2}}'
+JSON.SET doc $..a 3
+JSON.GET doc
 "{\"f1\":{\"a\":3},\"f2\":{\"a\":3}}"
 ```
 
