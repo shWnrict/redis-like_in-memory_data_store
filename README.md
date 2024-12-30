@@ -47,23 +47,6 @@ git clone https://github.com/shWnrict/redis-like_in-memory_data_store.git
 cd redis-like_in-memory_data_store
 ```
 
-2. Create a virtual environment (optional):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Testing
-To run the test suite:
-```bash
-python -m pytest tests/
-```
-
 ## Usage
 Currently, the project can be tested using redis-cli:
 
@@ -76,165 +59,205 @@ python -m src.main
 ```bash
 redis-cli -p 6379
 ```
-
 ### Supported Commands
 
 #### Core Operations: Basic key-value operations
 
-| Command | Purpose | Syntax | Output |
-|---------|---------|---------|---------|
-| SET | Set key to hold string value | SET key value | "OK" |
-| GET | Get value of key | GET key | value |
-| DEL | Delete a key | DEL key [key ...] | (integer) 1 |
-| EXISTS | Determine if key exists | EXISTS key [key ...] | (integer) 1 |
-| EXPIRE | Set key timeout | EXPIRE key seconds | (integer) 1 |
-| TTL | Get key timeout | TTL key | (integer) seconds |
-| PERSIST | Remove timeout | PERSIST key | (integer) 1 |
-
-Example commands:
-```
-SET mykey "Hello"
-GET mykey
-DEL mykey
-EXISTS mykey
-EXPIRE mykey 60
-TTL mykey
-PERSIST mykey
-```
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| SET | Set key to hold string value | SET key value [EX seconds] |
+| GET | Get value of key | GET key |
+| DEL | Delete a key | DEL key [key ...] |
+| EXISTS | Determine if key exists | EXISTS key [key ...] |
+| EXPIRE | Set key timeout | EXPIRE key seconds |
+| TTL | Get key timeout | TTL key |
+| PERSIST | Remove timeout | PERSIST key |
 
 #### Transaction Operations: Atomic operation groups
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| MULTI | Start transaction | MULTI |
+| EXEC | Execute transaction | EXEC |
+| DISCARD | Discard transaction | DISCARD |
+
 #### Server Operations: Server management and replication
 
-****
-#### Publish/Subscribe: 
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| SLAVEOF | Set replication source | SLAVEOF host port |
+| SYNC | Sync with master | SYNC |
+| PING | Test connection | PING |
+| FLUSHDB | Clear database | FLUSHDB |
 
-****
+#### Publish/Subscribe:
+
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| PUBLISH | Send message to channel | PUBLISH channel message |
+| SUBSCRIBE | Listen for messages | SUBSCRIBE channel [channel ...] |
+
 #### String Operations: String manipulation and atomic counters
 
-| Command | Purpose | Syntax | Output |
-|---------|---------|---------|---------|
-| APPEND | Append to value of key | APPEND key value | (integer) length |
-| STRLEN | Get length of string value | STRLEN key | (integer) length |
-| INCR | Increment value by one | INCR key | (integer) value |
-| DECR | Decrement value by one | DECR key | (integer) value |
-| INCRBY | Increment by specified amount | INCRBY key increment | (integer) value |
-| DECRBY | Decrement by specified amount | DECRBY key decrement | (integer) value |
-| GETRANGE | Get substring of string | GETRANGE key start end | string |
-| SETRANGE | Overwrite part of string | SETRANGE key offset value | (integer) length |
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| APPEND | Append to value of key | APPEND key value |
+| STRLEN | Get length of string value | STRLEN key |
+| INCR | Increment value by one | INCR key |
+| DECR | Decrement value by one | DECR key |
+| INCRBY | Increment by specified amount | INCRBY key increment |
+| DECRBY | Decrement by specified amount | DECRBY key decrement |
+| GETRANGE | Get substring of string | GETRANGE key start end |
+| SETRANGE | Overwrite part of string | SETRANGE key offset value |
 
-Example commands:
-```
-SET mykey "Hello"
-APPEND mykey " World"
-STRLEN mykey
-INCR counter
-DECRBY counter 5
-GETRANGE mykey 0 4
-SETRANGE mykey 6 "Redis"
-```
+#### List Operations: Queue and stack operations
 
-****
-#### List Operations: Queue and stack operations**
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| LPUSH | Push element to head of list | LPUSH key value [value ...] |
+| RPUSH | Push element to tail of list | RPUSH key value [value ...] |
+| LPOP | Remove and get first element | LPOP key |
+| RPOP | Remove and get last element | RPOP key |
+| LRANGE | Get range of elements | LRANGE key start stop |
+| LINDEX | Get element by index | LINDEX key index |
+| LSET | Set element at index | LSET key index value |
 
-| Command | Purpose | Syntax | Output |
-|---------|---------|---------|---------|
-| LPUSH | Push element to head of list | LPUSH key value [value ...] | (integer) length |
-| RPUSH | Push element to tail of list | RPUSH key value [value ...] | (integer) length |
-| LPOP | Remove and get first element | LPOP key | element |
-| RPOP | Remove and get last element | RPOP key | element |
-| LRANGE | Get range of elements | LRANGE key start stop | array |
-| LINDEX | Get element by index | LINDEX key index | element |
-| LSET | Set element at index | LSET key index value | "OK" |
-
-Example commands:
-```
-LPUSH mylist "world"
-RPUSH mylist "hello"
-LPOP mylist
-LRANGE mylist 0 -1
-LINDEX mylist 0
-LSET mylist 0 "redis"
-```
-
-****
 #### Set Operations: Unique element collections
 
-| Command | Purpose | Syntax | Output |
-|---------|---------|---------|---------|
-| SADD | Add member to set | SADD key member [member ...] | (integer) added |
-| SREM | Remove member from set | SREM key member [member ...] | (integer) removed |
-| SISMEMBER | Test if member in set | SISMEMBER key member | (integer) exists |
-| SMEMBERS | Get all members | SMEMBERS key | array |
-| SINTER | Intersect multiple sets | SINTER key [key ...] | array |
-| SUNION | Add multiple sets | SUNION key [key ...] | array |
-| SDIFF | Subtract multiple sets | SDIFF key [key ...] | array |
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| SADD | Add member to set | SADD key member [member ...] |
+| SREM | Remove member from set | SREM key member [member ...] |
+| SISMEMBER | Test if member in set | SISMEMBER key member |
+| SMEMBERS | Get all members | SMEMBERS key |
+| SINTER | Intersect multiple sets | SINTER key [key ...] |
+| SUNION | Add multiple sets | SUNION key [key ...] |
+| SDIFF | Subtract multiple sets | SDIFF key [key ...] |
 
-Example commands:
-```
-SADD myset "one"
-SADD myset "two"
-SISMEMBER myset "one"
-SMEMBERS myset
-SINTER set1 set2
-SUNION set1 set2
-```
-
-****
 #### Hash Operations: Field-value pair storage
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| HSET | Set field in hash | HSET key field value |
+| HGET | Get field in hash | HGET key field |
+| HMSET | Set multiple fields | HMSET key field value [field value ...] |
+| HGETALL | Get all fields and values | HGETALL key |
+| HDEL | Delete field | HDEL key field [field ...] |
+| HEXISTS | Test if field exists | HEXISTS key field |
+
 #### Sorted Set Operations: Scored member management
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| ZADD | Add member with score | ZADD key score member [score member ...] |
+| ZRANGE | Get range of members | ZRANGE key start stop [WITHSCORES] |
+| ZRANK | Get rank of member | ZRANK key member |
+| ZREM | Remove member | ZREM key member [member ...] |
+| ZRANGEBYSCORE | Get range by score | ZRANGEBYSCORE key min max [WITHSCORES] |
+
 #### JSON document storage
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| JSON.SET | Set JSON value | JSON.SET key path value |
+| JSON.GET | Get JSON value | JSON.GET key [path ...] |
+| JSON.DEL | Delete JSON value | JSON.DEL key [path] |
+| JSON.ARRAPPEND | Append to JSON array | JSON.ARRAPPEND key path value [value ...] |
+
 #### Stream Operations: Append-only log structures
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| XADD | Add entry to stream | XADD key ID field value [field value ...] |
+| XREAD | Read stream entries | XREAD [COUNT count] STREAMS key ID |
+| XRANGE | Get range of entries | XRANGE key start end [COUNT count] |
+| XLEN | Get length of stream | XLEN key |
+| XGROUP | Manage consumer groups | XGROUP CREATE key groupname ID |
+| XREADGROUP | Read from consumer group | XREADGROUP GROUP group consumer STREAMS key ID |
+| XACK | Acknowledge message | XACK key group ID [ID ...] |
+
 #### Geospatial Operations: Location-based features
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| GEOADD | Add geospatial item | GEOADD key longitude latitude member |
+| GEOSEARCH | Search radius | GEOSEARCH key FROMLONLAT longitude latitude BYRADIUS radius unit |
+| GEODIST | Get distance between points | GEODIST key member1 member2 [unit] |
+
 #### Bitmap & Bitfield Operations: Bit-level manipulations
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| SETBIT | Set bit value | SETBIT key offset value |
+| GETBIT | Get bit value | GETBIT key offset |
+| BITCOUNT | Count set bits | BITCOUNT key [start end] |
+| BITOP | Bitwise operations | BITOP operation destkey key [key ...] |
+| BITFIELD | Operate on bitmap segments | BITFIELD key GET type offset |
+
 #### Probabilistic Operations: Bloom filters and HyperLogLog
 
-****
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| BF.RESERVE | Create Bloom filter | BF.RESERVE key error_rate initial_size |
+| BF.ADD | Add to Bloom filter | BF.ADD key item |
+| BF.EXISTS | Check Bloom filter | BF.EXISTS key item |
+| PFADD | Add to HyperLogLog | PFADD key element [element ...] |
+| PFCOUNT | Get HyperLogLog count | PFCOUNT key [key ...] |
+| PFMERGE | Merge HyperLogLogs | PFMERGE destkey sourcekey [sourcekey ...] |
+
 #### Time Series Operations: Time-based data management
 
+| Command | Purpose | Syntax |
+|---------|---------|--------|
+| TS.CREATE | Create time series | TS.CREATE key |
+| TS.ADD | Add time series entry | TS.ADD key timestamp value |
+| TS.GET | Get time series entry | TS.GET key |
+| TS.RANGE | Get time series range | TS.RANGE key fromTimestamp toTimestamp |
 
-## Project Structure -Enhance the Project Structure section with descriptions:
+## Project Structure
 ```
-project_root/
-├── src/
-│   ├── __init__.py
-│   ├── server.py          # Server implementation
-│   ├── store/
-│   │   ├── __init__.py
-│   │   ├── base.py       # Core storage implementation
-│   │   ├── strings.py    # String data type implementation
-│   │   ├── lists.py      # List data type implementation
-│   │   ├── sets.py       # Set data type implementation
-│   │   ├── hashes.py     # Hash data type implementation
-│   │   ├── sorted_sets.py # Sorted Set data type implementation
-│   │   └── types/        # Other data type implementations
-│   ├── protocol/         # Client-server communication
-│   │   ├── __init__.py
-│   │   ├── parser.py     # Command parser implementation
-│   │   ├── responder.py  # Response handler implementation
-│   │   └── connection.py # Client connection handler
-│   └── persistence/      # Data persistence implementations
-│       ├── __init__.py
-│       ├── aof.py        # Append-only file persistence
-│       └── snapshot.py   # Snapshot persistence
-├── tests/
-│   ├── __init__.py
-│   └── test_store.py
-├── requirements.txt
-└── README.md
+└── 📁src
+    ├── main.py                      # Main entry point
+    ├── protocol.py                  # Protocol handling
+    ├── pubsub.py                    # Publish/Subscribe functionality
+    ├── replication.py               # Replication mechanisms
+    ├── server.py                    # Server setup and configuration
+    └── 📁core
+        ├── database.py              # Core database functionality
+        ├── expiry.py                # Expiry management
+        ├── persistence.py           # Persistence mechanisms
+        ├── transaction.py           # Transaction management
+    └── 📁datatypes
+        ├── 📁advanced
+            ├── bitfield.py          # Bitfield data type
+            ├── bitmap.py            # Bitmap data type
+            ├── geo.py               # Geospatial data type
+            ├── json.py              # JSON data type
+            ├── probabilistic.py     # Probabilistic data structures
+            ├── stream.py            # Stream data type
+            ├── timeseries.py        # Timeseries data type
+        ├── base.py                  # Base data type
+        ├── hash.py                  # Hash data type
+        ├── list.py                  # List data type
+        ├── set.py                   # Set data type
+        ├── string.py                # String data type
+        ├── zset.py                  # Sorted set data type
+    └── 📁commands
+        ├── base_handler.py          # Base class for command handlers
+        ├── bitfield_handler.py      # Handler for bitfield commands
+        ├── bitmap_handler.py        # Handler for bitmap commands
+        ├── core_handler.py          # Core command handler
+        ├── geo_handler.py           # Handler for geospatial commands
+        ├── hash_handler.py          # Handler for hash commands
+        ├── json_handler.py          # Handler for JSON commands
+        ├── list_handler.py          # Handler for list commands
+        ├── probabilistic_handler.py # Handler for probabilistic data structures
+        ├── set_handler.py           # Handler for set commands
+        ├── stream_handler.py        # Handler for stream commands
+        ├── string_handler.py        # Handler for string commands
+        ├── timeseries_handler.py    # Handler for timeseries commands
+        ├── transaction_handler.py   # Handler for transaction commands
+        ├── zset_handler.py          # Handler for sorted set commands
 ```
 
 ## Known Limitations
