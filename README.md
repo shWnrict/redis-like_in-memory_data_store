@@ -4,10 +4,10 @@
 A custom implementation of a redis-like in-memory data store using Python. This project provides a simple and efficient way to store and manage data in memory with support for basic Redis-like commands and data structures.
 
 ## Key Features
-- Core KeyValue Store
-- Key Expiration
-- Transactions
-- Comprehensive Data Types
+- **Core Key-Value Store**
+- **Key Expiration**
+- **Transactions**
+- **Comprehensive Data Types**
     - Strings
     - Lists
     - Sets
@@ -20,16 +20,16 @@ A custom implementation of a redis-like in-memory data store using Python. This 
     - Bitfields
     - Probabilistic (HyperLogLog, Bloom Filter)
     - Time-Series data
-- Pub/Sub Mechanism
-- Replication (master-slave)
-- Data Persistence support (AOF, Snapshots)
+- **Pub/Sub Mechanism**
+- **Replication** (master-slave)
+- **Data Persistence support** (AOF, Snapshots)
 
-### Data Persistence
-#### Append Only File (AOF)
+#### Data Persistence
+##### Append Only File (AOF)
 - All write operations are logged
 - Recovery on restart
 
-#### Snapshots
+##### Snapshots
 - Point-in-time snapshots of the dataset
 - Configurable snapshot intervals
 - Manual snapshot through SAVE command
@@ -78,8 +78,7 @@ redis-cli -p 6379
 
 ### Supported Commands
 
-#### Core Operations
-**Basic key-value operations**
+#### Core Operations: Basic key-value operations
 
 | Command | Purpose | Syntax | Output |
 |---------|---------|---------|---------|
@@ -102,17 +101,16 @@ TTL mykey
 PERSIST mykey
 ```
 
-#### Transaction Operations
-**Atomic operation groups**
+#### Transaction Operations: Atomic operation groups
 
-#### Server Operations
-**Server management and replication**
-
-#### **Publish/Subscribe**
 ****
+#### Server Operations: Server management and replication
 
-#### String Operations
-**String manipulation and atomic counters**
+****
+#### Publish/Subscribe: 
+
+****
+#### String Operations: String manipulation and atomic counters
 
 | Command | Purpose | Syntax | Output |
 |---------|---------|---------|---------|
@@ -136,8 +134,8 @@ GETRANGE mykey 0 4
 SETRANGE mykey 6 "Redis"
 ```
 
-#### List Operations
-**Queue and stack operations**
+****
+#### List Operations: Queue and stack operations**
 
 | Command | Purpose | Syntax | Output |
 |---------|---------|---------|---------|
@@ -159,8 +157,8 @@ LINDEX mylist 0
 LSET mylist 0 "redis"
 ```
 
-#### Set Operations
-**Unique element collections**
+****
+#### Set Operations: Unique element collections
 
 | Command | Purpose | Syntax | Output |
 |---------|---------|---------|---------|
@@ -181,29 +179,31 @@ SMEMBERS myset
 SINTER set1 set2
 SUNION set1 set2
 ```
-#### Hash Operations
-**Field-value pair storage**
 
-#### Sorted Set Operations
-**Scored member management**
+****
+#### Hash Operations: Field-value pair storage
 
-#### JSON
-**JSON document storage**
+****
+#### Sorted Set Operations: Scored member management
 
-#### Stream Operations
-**Append-only log structures**
+****
+#### JSON document storage
 
-#### Geospatial Operations
-**Location-based features**
+****
+#### Stream Operations: Append-only log structures
 
-#### Bitmap & Bitfield Operations
-**Bit-level manipulations**
+****
+#### Geospatial Operations: Location-based features
 
-#### Probabilistic Operations
-**Bloom filters and HyperLogLog**
+****
+#### Bitmap & Bitfield Operations: Bit-level manipulations
 
-#### Time Series Operations
-**Time-based data management**
+****
+#### Probabilistic Operations: Bloom filters and HyperLogLog
+
+****
+#### Time Series Operations: Time-based data management
+
 
 ## Project Structure -Enhance the Project Structure section with descriptions:
 ```
