@@ -1,0 +1,6 @@
+# Core dependencies
+pytest==7.3.1        # For running test suite
+
+# Data Structure Support
+mmh3==3.0.0         # For probabilistic data structures (Bloom filters)
+pandas==2.0.2        # For time series data management

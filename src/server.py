@@ -173,6 +173,25 @@ class TCPServer:
             if formatted_response:
                 client_socket.sendall(formatted_response.encode())
                 
+        except ConnectionError:
+            # Handle normal disconnection
+            try:
+                addr = client_socket.getpeername()
+                print(f"Client disconnected: {addr[0]}:{addr[1]}")
+            except:
+                print("Client disconnected")
+            raise
+        except (socket.error, OSError) as e:
+            # Handle socket errors gracefully
+            try:
+                addr = client_socket.getpeername()
+                if e.errno == 10054:  # Connection reset by peer
+                    print(f"Client disconnected: {addr[0]}:{addr[1]}")
+                else:
+                    print(f"Socket error from {addr[0]}:{addr[1]}: {e.strerror}")
+            except:
+                print("Client connection lost")
+            raise
         except Exception as e:
             print(f"Error handling client data: {e}")
             raise

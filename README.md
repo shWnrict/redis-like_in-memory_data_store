@@ -21,7 +21,6 @@ A custom implementation of a redis-like in-memory data store using Python. This 
     - Probabilistic (HyperLogLog, Bloom Filter)
     - Time-Series data
 - **Pub/Sub Mechanism**
-- **Replication** (master-slave)
 - **Data Persistence support** (AOF, Snapshots)
 
 #### Data Persistence
@@ -63,10 +62,12 @@ redis-cli
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| SET | Set key to hold string value | SET key value [EX seconds] |
+| PING | Test connection | PING |
+| FLUSHDB | Clear database | FLUSHDB |
+| SET | Set key to hold string value | SET key value|
 | GET | Get value of key | GET key |
 | DEL | Delete a key | DEL key [key ...] |
-| EXISTS | Determine if key exists | EXISTS key [key ...] |
+| EXISTS | Determine if key exists | EXISTS key |
 | EXPIRE | Set key timeout | EXPIRE key seconds |
 | TTL | Get key timeout | TTL key |
 | PERSIST | Remove timeout | PERSIST key |
@@ -79,21 +80,13 @@ redis-cli
 | EXEC | Execute transaction | EXEC |
 | DISCARD | Discard transaction | DISCARD |
 
-#### Server Operations: Server management and replication
-
-| Command | Purpose | Syntax |
-|---------|---------|--------|
-| SLAVEOF | Set replication source | SLAVEOF host port |
-| SYNC | Sync with master | SYNC |
-| PING | Test connection | PING |
-| FLUSHDB | Clear database | FLUSHDB |
 
 #### Publish/Subscribe:
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
 | PUBLISH | Send message to channel | PUBLISH channel message |
-| SUBSCRIBE | Listen for messages | SUBSCRIBE channel [channel ...] |
+| SUBSCRIBE | Listen for messages | SUBSCRIBE channel |
 
 #### String Operations: String manipulation and atomic counters
 
@@ -112,8 +105,8 @@ redis-cli
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| LPUSH | Push element to head of list | LPUSH key value [value ...] |
-| RPUSH | Push element to tail of list | RPUSH key value [value ...] |
+| LPUSH | Push element to head of list | LPUSH key value |
+| RPUSH | Push element to tail of list | RPUSH key value |
 | LPOP | Remove and get first element | LPOP key |
 | RPOP | Remove and get last element | RPOP key |
 | LRANGE | Get range of elements | LRANGE key start stop |
@@ -124,13 +117,13 @@ redis-cli
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| SADD | Add member to set | SADD key member [member ...] |
-| SREM | Remove member from set | SREM key member [member ...] |
+| SADD | Add member to set | SADD key member |
+| SREM | Remove member from set | SREM key member |
 | SISMEMBER | Test if member in set | SISMEMBER key member |
 | SMEMBERS | Get all members | SMEMBERS key |
-| SINTER | Intersect multiple sets | SINTER key [key ...] |
-| SUNION | Add multiple sets | SUNION key [key ...] |
-| SDIFF | Subtract multiple sets | SDIFF key [key ...] |
+| SINTER | Intersect multiple sets | SINTER key |
+| SUNION | Add multiple sets | SUNION key |
+| SDIFF | Subtract multiple sets | SDIFF key |
 
 #### Hash Operations: Field-value pair storage
 
@@ -140,17 +133,17 @@ redis-cli
 | HGET | Get field in hash | HGET key field |
 | HMSET | Set multiple fields | HMSET key field value [field value ...] |
 | HGETALL | Get all fields and values | HGETALL key |
-| HDEL | Delete field | HDEL key field [field ...] |
+| HDEL | Delete field | HDEL key field |
 | HEXISTS | Test if field exists | HEXISTS key field |
 
 #### Sorted Set Operations: Scored member management
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| ZADD | Add member with score | ZADD key score member [score member ...] |
+| ZADD | Add member with score | ZADD key score member |
 | ZRANGE | Get range of members | ZRANGE key start stop [WITHSCORES] |
 | ZRANK | Get rank of member | ZRANK key member |
-| ZREM | Remove member | ZREM key member [member ...] |
+| ZREM | Remove member | ZREM key member |
 | ZRANGEBYSCORE | Get range by score | ZRANGEBYSCORE key min max [WITHSCORES] |
 
 #### JSON document storage
