@@ -23,17 +23,23 @@ class StreamDataType:
     def _ensure_stream(self, key: str) -> Dict:
         """Ensure the value at key is a stream."""
         if not self.db.exists(key):
-            value = {
-                'entries': collections.OrderedDict(),  # id -> StreamEntry
-                'groups': {},  # group_name -> ConsumerGroup
+            stream = {
+                'entries': collections.OrderedDict(),
+                'groups': {},
                 'last_id': '0-0'
             }
-            self.db.store[key] = value
-            return value
-        value = self.db.get(key)
-        if not isinstance(value, dict) or 'entries' not in value:
-            raise ValueError("Value is not a stream")
-        return value
+            self.db.store[key] = stream
+            return stream
+            
+        stream = self.db.store.get(key)
+        if not isinstance(stream, dict) or 'entries' not in stream:
+            stream = {
+                'entries': collections.OrderedDict(),
+                'groups': {},
+                'last_id': '0-0'
+            }
+            self.db.store[key] = stream
+        return stream
 
     def _generate_id(self) -> str:
         """Generate a unique stream entry ID."""
@@ -63,8 +69,8 @@ class StreamDataType:
                 self.db.persistence_manager.log_command(f"XADD {key} {id} {fields_str}")
 
             return id
-        except ValueError as e:
-            raise e
+        except Exception as e:
+            return str(e)
 
     def xread(self, keys: List[str], ids: List[str], count: Optional[int] = None) -> Dict[str, List[Tuple[str, Dict]]]:
         """Read from one or more streams."""
@@ -95,7 +101,7 @@ class StreamDataType:
                     if count and len(result) >= count:
                         break
             return result
-        except ValueError:
+        except Exception:
             return []
 
     def xlen(self, key: str) -> int:
@@ -103,7 +109,7 @@ class StreamDataType:
         try:
             stream = self._ensure_stream(key)
             return len(stream['entries'])
-        except ValueError:
+        except Exception:
             return 0
 
     def xgroup_create(self, key: str, group_name: str, id: str = '$', mkstream: bool = False) -> bool:

@@ -21,20 +21,25 @@ class StreamCommandHandler(BaseCommandHandler):
             field_list.extend([k, v])
         return [id, field_list]
 
-    def xadd_command(self, client_id, key, *args):
+    def xadd_command(self, client_id, *args):
         """Add entry to stream. Format: XADD key [ID] field value [field value ...]"""
-        if len(args) < 3 or len(args) % 2 == 0:
-            return "ERROR: Wrong number of arguments for XADD"
-        
-        try:
-            id = args[0]
-            fields = {}
-            for i in range(1, len(args), 2):
-                fields[args[i]] = args[i + 1]
+        if len(args) < 4:
+            return "ERR wrong number of arguments for 'xadd' command"
             
-            return self.db.stream.xadd(key, fields, id)
-        except ValueError as e:
-            return f"ERROR: {str(e)}"
+        key = args[0]
+        id = args[1]
+        
+        if len(args[2:]) % 2 != 0:
+            return "ERR wrong number of arguments for 'xadd' command"
+            
+        fields = {}
+        for i in range(2, len(args), 2):
+            fields[args[i]] = args[i + 1]
+        
+        result = self.db.stream.xadd(key, fields, id)
+        if isinstance(result, str) and result.startswith("ERR"):
+            return result
+        return result
 
     def xread_command(self, client_id, *args):
         """Read from streams. Format: XREAD [COUNT count] STREAMS key [key ...] ID [ID ...]"""
@@ -90,14 +95,16 @@ class StreamCommandHandler(BaseCommandHandler):
             try:
                 count = int(args[1])
             except ValueError:
-                return "ERROR: Invalid COUNT value"
+                return "ERR Invalid COUNT value"
 
         result = self.db.stream.xrange(key, start, end, count)
-        return [self._format_entry(entry) for entry in result] if result else "(empty list)"
+        if not result:
+            return []
+        return [self._format_entry(entry) for entry in result]
 
     def xlen_command(self, client_id, key):
         """Return length of stream."""
-        return str(self.db.stream.xlen(key))
+        return self.db.stream.xlen(key)
 
     def xgroup_command(self, client_id, subcommand, *args):
         """Handle consumer group commands."""

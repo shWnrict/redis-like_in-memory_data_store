@@ -215,21 +215,18 @@ JSON.GET item:1
 | XREAD | XREAD STREAMS mystream 0 | 1) 1) "mystream" 2) 1) "1683552795445-0" 2) "field1" 3) "value1" |
 | XRANGE | XRANGE mystream - + | 1) 1) "1683552795445-0" 2) "field1" 3) "value1" |
 | XLEN | XLEN mystream | (integer) 1 |
-| XGROUP | XGROUP CREATE mystream mygroup $ | OK |
-| XREADGROUP | XREADGROUP GROUP mygroup consumer mystream > | 1) 1) "mystream" 2) 1) "1683552795445-0" 2) "field1" 3) "value1" |
-| XACK | XACK mystream mygroup 1683552795445-0 | (integer) 1 |
 
 ```shell
-XADD mystream * field1 value1
-XREAD STREAMS mystream 0
-XRANGE mystream - +
+XADD mystream * name Sara surname OConnor
+XADD mystream * field1 value1 field2 value2 field3 value3
 XLEN mystream
-XGROUP CREATE mystream mygroup $
-XREADGROUP GROUP mygroup consumer mystream >
-XACK mystream mygroup 1683552795445-0
+XRANGE mystream - +
 ```
 
 #### Geospatial Operations: Location-based features
+https://redis.io/docs/latest/commands/geoadd/
+https://redis.io/docs/latest/commands/geosearch/
+https://redis.io/docs/latest/commands/geodist/
 
 | Command | Sample Input | Expected Output |
 |---------|--------------|-----------------|
@@ -238,9 +235,10 @@ XACK mystream mygroup 1683552795445-0
 | GEODIST | GEODIST mygeoset "Palermo" "Catania" km | "166.2741" |
 
 ```shell
-GEOADD mygeoset 13.361389 38.115556 "Palermo"
-GEOSEARCH mygeoset FROMLONLAT 13.361389 38.115556 BYRADIUS 200 km
-GEODIST mygeoset "Palermo" "Catania" km
+GEOADD Sicily 13.361389 38.115556 "Palermo" 15.087269 37.502669 "Catania"
+GEODIST Sicily Palermo Catania
+GEORADIUS Sicily 15 37 100 km
+GEORADIUS Sicily 15 37 200 km
 ```
 
 #### Bitmap & Bitfield Operations: Bit-level manipulations

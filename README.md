@@ -173,15 +173,15 @@ redis-cli
 | XREAD | Read stream entries | XREAD [COUNT count] STREAMS key ID |
 | XRANGE | Get range of entries | XRANGE key start end [COUNT count] |
 | XLEN | Get length of stream | XLEN key |
-| XGROUP | Manage consumer groups | XGROUP CREATE key groupname ID |
-| XREADGROUP | Read from consumer group | XREADGROUP GROUP group consumer STREAMS key ID |
-| XACK | Acknowledge message | XACK key group ID [ID ...] |
+| XGROUP | Manage consumer groups | []|
+| XREADGROUP | Read from consumer group | []|
+| XACK | Acknowledge message | []]|
 
 #### Geospatial Operations: Location-based features
 
 | Command | Purpose | Syntax |
 |---------|---------|--------|
-| GEOADD | Add geospatial item | GEOADD key longitude latitude member |
+| GEOADD | Add geospatial item | GEOADD key longitude latitude name |
 | GEOSEARCH | Search radius | GEOSEARCH key FROMLONLAT longitude latitude BYRADIUS radius unit |
 | GEODIST | Get distance between points | GEODIST key member1 member2 [unit] |
 
