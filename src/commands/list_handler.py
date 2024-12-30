@@ -13,37 +13,34 @@ class ListCommandHandler(BaseCommandHandler):
         }
 
     def lpush_command(self, client_id, key, *values):
-        return str(self.db.list.lpush(key, *values))
+        if not values:
+            return "ERR wrong number of arguments for 'lpush' command"
+        result = self.db.list.lpush(key, *values)
+        return result
 
     def rpush_command(self, client_id, key, *values):
-        return str(self.db.list.rpush(key, *values))
+        if not values:
+            return "ERR wrong number of arguments for 'rpush' command"
+        result = self.db.list.rpush(key, *values)
+        return result
 
     def lpop_command(self, client_id, key):
-        value = self.db.list.lpop(key)
-        return value if value is not None else "(nil)"
+        return self.db.list.lpop(key)
 
     def rpop_command(self, client_id, key):
-        value = self.db.list.rpop(key)
-        return value if value is not None else "(nil)"
+        return self.db.list.rpop(key)
 
     def lrange_command(self, client_id, key, start, stop):
         try:
-            result = self.db.list.lrange(key, int(start), int(stop))
-            return result if result else "(empty list)"
-        except ValueError:
-            return "ERROR: Invalid integer value"
+            result = self.db.list.lrange(key, start, stop)
+            if isinstance(result, str) and result.startswith("ERR"):
+                return result
+            return result
+        except Exception as e:
+            return f"ERR {str(e)}"
 
     def lindex_command(self, client_id, key, index):
-        try:
-            value = self.db.list.lindex(key, int(index))
-            return value if value is not None else "(nil)"
-        except ValueError:
-            return "ERROR: Invalid integer value"
+        return self.db.list.lindex(key, index)
 
     def lset_command(self, client_id, key, index, value):
-        try:
-            if self.db.list.lset(key, int(index), value):
-                return "OK"
-            return "ERROR: Index out of range"
-        except ValueError:
-            return "ERROR: Invalid integer value"
+        return self.db.list.lset(key, index, value)

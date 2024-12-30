@@ -9,10 +9,19 @@ class TransactionCommandHandler(BaseCommandHandler):
         }
 
     def multi_command(self, client_id):
-        return self.db.transaction_manager.start_transaction(client_id) or "OK"
+        result = self.db.transaction_manager.start_transaction(client_id)
+        if isinstance(result, str) and result.startswith("ERR"):
+            return result
+        return "OK"
 
     def exec_command(self, client_id):
-        return self.db.transaction_manager.execute_transaction(client_id)
+        result = self.db.transaction_manager.execute_transaction(client_id)
+        if isinstance(result, str) and result.startswith("ERR"):
+            return result
+        return result
 
     def discard_command(self, client_id):
-        return self.db.transaction_manager.discard_transaction(client_id) or "OK"
+        result = self.db.transaction_manager.discard_transaction(client_id)
+        if isinstance(result, str) and result.startswith("ERR"):
+            return result
+        return "OK"

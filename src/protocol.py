@@ -50,39 +50,23 @@ def format_resp(data):
     if data is None:
         return "$-1\r\n"  # Redis nil response
     elif isinstance(data, str):
-        if data.startswith("ERROR"):
-            # Extract error message
-            error_msg = data[6:] if data.startswith("ERROR: ") else data
-            
-            # Handle different error types
-            if "wrong kind of value" in error_msg.lower():
-                return f"-WRONGTYPE {error_msg}\r\n"
-            else:
-                return f"-ERR {error_msg}\r\n"
-                
+        if data.startswith(("ERR", "WRONGTYPE")):
+            return f"-{data}\r\n"
         return f"${len(data)}\r\n{data}\r\n"
     elif isinstance(data, int):
         return f":{data}\r\n"
-    elif isinstance(data, list):
+    elif isinstance(data, (list, tuple)):
         if not data:
-            return "*0\r\n"
+            return "*0\r\n"  # Empty array
         parts = [f"*{len(data)}\r\n"]
         for item in data:
             if isinstance(item, str):
                 parts.append(f"${len(item)}\r\n{item}\r\n")
+            elif isinstance(item, int):
+                parts.append(f":{item}\r\n")
             else:
                 parts.append(format_resp(item))
         return "".join(parts)
-    elif isinstance(data, tuple) and len(data) == 3 and data[0] == "SUBSCRIBE_MODE":
-        _, channel, count = data
-        return (
-            "*3\r\n"
-            "$9\r\n"
-            "subscribe\r\n"
-            f"${len(channel)}\r\n"
-            f"{channel}\r\n"
-            f":{count}\r\n"
-        )
     else:
         data_str = str(data)
         return f"${len(data_str)}\r\n{data_str}\r\n"

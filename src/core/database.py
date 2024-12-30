@@ -92,7 +92,14 @@ class KeyValueStore:
         if key in self.expiry and self.expiry[key] <= time.time():
             self.delete(key)
             return None
-        return self.store.get(key)
+            
+        value = self.store.get(key)
+        if value is None:
+            return None
+        # Return type error if trying to GET a non-string value
+        if isinstance(value, (list, dict, set)):
+            return "WRONGTYPE Operation against a key holding the wrong kind of value"
+        return value
 
     def delete(self, key):
         """Delete a key and log the operation."""

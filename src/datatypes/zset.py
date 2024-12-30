@@ -9,6 +9,20 @@ class SkipListNode:
         self.span = [0] * (level + 1)  # Add span for rank calculations
 
 class SkipList:
+    """
+    A SkipList is a probabilistic data structure that allows for fast search, insertion,
+    and deletion operations.
+    It consists of multiple levels of linked lists, where each level is a subset of the level
+    below it.
+    The bottom level contains all the elements, and higher levels provide shortcuts 
+    to improve efficiency.
+    Attributes:
+        MAX_LEVEL (int): The maximum level of the skip list.
+        P (float): The probability of promoting an element to the next level.
+        head (SkipListNode): The head node of the skip list.
+        level (int): The current maximum level of the skip list.
+        length (int): The number of elements in the skip list.
+    """
     MAX_LEVEL = 16
     P = 0.25
 
@@ -18,12 +32,14 @@ class SkipList:
         self.length = 0
 
     def random_level(self) -> int:
+        "Generates a random level for a new node based on the probability P."
         level = 0
         while random.random() < self.P and level < self.MAX_LEVEL:
             level += 1
         return level
 
     def insert(self, score: float, member: str) -> None:
+        "Inserts a new element with the given score and member into the skip list."
         update = [None] * (self.MAX_LEVEL + 1)
         rank = [0] * (self.MAX_LEVEL + 1)
         current = self.head

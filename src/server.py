@@ -29,6 +29,15 @@ class TCPServer:
         port (int): The port number of the server.
         db (KeyValueStore): The key-value store database instance.
         server_socket (socket.socket): The server socket.
+        shutting_down (bool): Flag indicating if the server is shutting down.
+        socket_timeout (float): The timeout value for socket operations.
+        active_clients (set): A set of active client sockets.
+        pubsub_manager (PubSubManager): The Pub/Sub manager instance.
+        subscribed_clients (set): A set of subscribed client IDs.
+        client_sockets (dict): A dictionary mapping client IDs to their sockets.
+        client_channels (defaultdict): A dictionary mapping client IDs to their subscribed channels.
+        replication_manager (ReplicationManager): The replication manager instance.
+        slaves (set): A set of slave client IDs.
         command_map (dict): A dictionary mapping commands to their handlers.
     """
     def __init__(self, host='127.0.0.1', port=6379):
@@ -159,12 +168,14 @@ class TCPServer:
                 
             response = self.process_request(request, client_id)
             
-            # Handle subscription mode
-            if isinstance(response, list):
-                for msg_type, channel, count in response:
-                    if msg_type == "SUBSCRIBE_MODE":
-                        client_socket.sendall(format_pubsub_message("subscribe", channel, count).encode())
-                return
+            if isinstance(response, tuple) and len(response) >= 2:
+                msg_type = response[0]
+                channel = response[1]
+                if msg_type == "SUBSCRIBE_MODE":
+                    self.subscribed_clients.add(client_id)
+                    self.client_channels[client_id].add(channel)
+                    client_socket.sendall(format_pubsub_message("subscribe", channel).encode())
+                    return
             
             # Format and send response
             formatted_response = format_resp(response)
@@ -179,19 +190,8 @@ class TCPServer:
             except:
                 print("Client disconnected")
             raise
-        except (socket.error, OSError) as e:
-            # Handle socket errors gracefully
-            try:
-                addr = client_socket.getpeername()
-                if e.errno == 10054:  # Connection reset by peer
-                    print(f"Client disconnected: {addr[0]}:{addr[1]}")
-                else:
-                    print(f"Socket error from {addr[0]}:{addr[1]}: {e.strerror}")
-            except:
-                print("Client connection lost")
-            raise
         except Exception as e:
-            print(f"Error handling client data: {e}")
+            print(f"Error handling client data: {str(e)}")
             raise
 
     def cleanup_client_by_socket(self, client_socket):
@@ -213,6 +213,20 @@ class TCPServer:
             except:
                 pass
 
+    def handle_subscribe(self, client_id, channels):
+        """Handle SUBSCRIBE command for multiple channels."""
+        if not channels:
+            return "ERROR: SUBSCRIBE requires at least one channel name"
+            
+        responses = []
+        for channel in channels:
+            self.pubsub_manager.subscribe(client_id, channel)
+            self.subscribed_clients.add(client_id)
+            self.client_channels[client_id].add(channel)
+            responses.append(format_pubsub_message("subscribe", channel))
+            
+        return ("SUBSCRIBE_MODE", responses)
+
     def process_request(self, request, client_id):
         if not request:
             return "ERROR: Empty command"
@@ -222,16 +236,14 @@ class TCPServer:
 
         # Handle pub/sub commands first
         if command == "SUBSCRIBE":
-            if not args:
-                return "ERROR: SUBSCRIBE requires at least one channel name"
-            
-            results = []
-            for channel in args:
-                count = self.pubsub_manager.subscribe(client_id, channel)
-                self.subscribed_clients.add(client_id)
-                self.client_channels[client_id].add(channel)
-                results.append(("SUBSCRIBE_MODE", channel, count))
-            return results
+            response = self.handle_subscribe(client_id, args)
+            if isinstance(response, tuple) and response[0] == "SUBSCRIBE_MODE":
+                client_socket = self.client_sockets.get(client_id)
+                if client_socket:
+                    for msg in response[1]:
+                        client_socket.sendall(msg.encode())
+                return None
+            return response
 
         if command == "PUBLISH":
             if len(args) != 2:

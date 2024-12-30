@@ -1,4 +1,9 @@
 class SetDataType:
+    """
+    SetDataType provides a Redis-like in-memory data store for set operations.
+    This class implements various set operations using hash tables (Python's built-in set) 
+    for O(1) average time complexity for lookups, insertions, and deletions.
+    """
     def __init__(self, database):
         self.db = database
 
