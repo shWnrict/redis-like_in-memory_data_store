@@ -221,7 +221,6 @@ redis-cli
     ├── main.py                      # Main entry point
     ├── protocol.py                  # Protocol handling
     ├── pubsub.py                    # Publish/Subscribe functionality
-    ├── replication.py               # Replication mechanisms
     ├── server.py                    # Server setup and configuration
     └── 📁core
         ├── database.py              # Core database functionality
@@ -273,6 +272,7 @@ redis-cli
 - No support for multiple databases
 - No cluster support
 - No Lua scripting support
+- No unit tests or benchmarking
 
 ## Future Development
 - [ ] Client library implementation
