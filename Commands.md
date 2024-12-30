@@ -179,11 +179,27 @@ ZRANGEBYSCORE myzset 1 2
 | JSON.DEL | JSON.DEL myjson .name | (integer) 1 |
 | JSON.ARRAPPEND | JSON.ARRAPPEND myjson .tags "fast" "scalable" | (integer) 3 |
 
+Examples
+Replace an existing value
 ```shell
-JSON.SET myjson . '{"name": "Redis", "type": "Database"}'
-JSON.GET myjson .
-JSON.DEL myjson .name
-JSON.ARRAPPEND myjson .tags "fast" "scalable"
+redis> JSON.SET doc $ '{"a":2}'
+redis> JSON.SET doc $.a '3'
+redis> JSON.GET doc $
+```
+
+Add a new value
+```shell
+redis> JSON.SET doc $ '{"a":2}'
+redis> JSON.SET doc $.b '8'
+redis> JSON.GET doc $
+```
+
+Update multi-paths
+```shell
+redis> JSON.SET doc $ '{"f1": {"a":1}, "f2":{"a":2}}'
+redis> JSON.SET doc $..a 3
+redis> JSON.GET doc
+"{\"f1\":{\"a\":3},\"f2\":{\"a\":3}}"
 ```
 
 #### Stream Operations: Append-only log structures

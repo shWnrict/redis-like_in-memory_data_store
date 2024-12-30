@@ -9,27 +9,27 @@ class JSONCommandHandler(BaseCommandHandler):
             "JSON.ARRAPPEND": self.json_arrappend_command,
         }
 
-    def json_set_command(self, client_id, key, path, value, *args):
-        """Set JSON value. Format: JSON.SET key path value [NX|XX]"""
-        nx = False
-        xx = False
-        
-        for arg in args:
-            if arg.upper() == 'NX':
-                nx = True
-            elif arg.upper() == 'XX':
-                xx = True
-                
-        if nx and xx:
-            return "ERROR: NX and XX are mutually exclusive"
+    def json_set_command(self, client_id, *args):
+        """Set JSON value. Format: JSON.SET key path value"""
+        if len(args) != 3:
+            return "ERR wrong number of arguments for 'json.set' command"
             
-        success = self.db.json.json_set(key, path, value, nx=nx, xx=xx)
-        return "OK" if success else "ERROR"
+        key, path, value = args
+        result = self.db.json.json_set(key, path, value)
+        return result
 
-    def json_get_command(self, client_id, key, path='$'):
+    def json_get_command(self, client_id, *args):
         """Get JSON value. Format: JSON.GET key [path]"""
+        if not args:
+            return "ERR wrong number of arguments for 'json.get' command"
+            
+        key = args[0]
+        path = args[1] if len(args) > 1 else '$'
+        
         result = self.db.json.json_get(key, path)
-        return result if result is not None else "(nil)"
+        if result is None:
+            return "(nil)"
+        return result
 
     def json_del_command(self, client_id, key, path='$'):
         """Delete JSON value. Format: JSON.DEL key [path]"""

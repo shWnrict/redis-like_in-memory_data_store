@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Union
 
 class JSONPath:
     @staticmethod
@@ -9,60 +9,19 @@ class JSONPath:
             return []
             
         # Remove $ prefix if present
-        if path.startswith('$.'):
-            path = path[2:]
-        elif path.startswith('$'):
+        if path.startswith('$'):
             path = path[1:]
-            
+            if path.startswith('.'):
+                path = path[1:]
+                
         if not path:
             return []
-        
-        components = []
-        current = ''
-        in_brackets = False
-        
-        for char in path:
-            if char == '[':
-                if current:
-                    components.append(current)
-                    current = ''
-                in_brackets = True
-            elif char == ']' and in_brackets:
-                if current:
-                    components.append(current)
-                    current = ''
-                in_brackets = False
-            elif char == '.' and not in_brackets:
-                if current:
-                    components.append(current)
-                    current = ''
-            else:
-                current += char
-                
-        if current:
-            components.append(current)
             
-        return components
-
-    @staticmethod
-    def get_value(obj: Any, path: str) -> Any:
-        """Get value at path from object."""
-        if not path or path == '$':
-            return obj
+        # Handle ..path (recursive descent)
+        if path.startswith('..'):
+            return ['..'] + path[2:].split('.')
             
-        current = obj
-        for component in JSONPath.parse_path(path):
-            try:
-                if isinstance(current, dict):
-                    current = current[component]
-                elif isinstance(current, list):
-                    idx = int(component)
-                    current = current[idx]
-                else:
-                    return None
-            except (KeyError, ValueError, IndexError, TypeError):
-                return None
-        return current
+        return path.split('.')
 
     @staticmethod
     def set_value(obj: Any, path: str, value: Any) -> bool:
@@ -70,127 +29,120 @@ class JSONPath:
         if not path or path == '$':
             return False
             
-        components = JSONPath.parse_path(path)
-        if not components:
-            return False
+        try:
+            if '..' in path:
+                return JSONPath._set_recursive(obj, path[3:], value)  # Skip $.., keep rest of path
+                
+            current = obj
+            components = path.split('.')[1:]  # Skip $ prefix
             
-        current = obj
-        for i, component in enumerate(components[:-1]):
-            try:
+            for i, component in enumerate(components[:-1]):
                 if isinstance(current, dict):
                     if component not in current:
-                        # Create new dict/list based on next component
-                        next_comp = components[i + 1]
-                        current[component] = [] if next_comp.isdigit() else {}
+                        current[component] = {}
                     current = current[component]
-                elif isinstance(current, list):
-                    idx = int(component)
-                    while len(current) <= idx:
-                        # Extend list if needed
-                        next_comp = components[i + 1]
-                        current.append([] if next_comp.isdigit() else {})
-                    current = current[idx]
                 else:
                     return False
-            except (ValueError, IndexError):
-                return False
-                
-        # Set final value
-        try:
+                    
             last = components[-1]
             if isinstance(current, dict):
-                current[last] = value
-            elif isinstance(current, list):
-                idx = int(last)
-                while len(current) <= idx:
-                    current.append(None)
-                current[idx] = value
-            else:
-                return False
-            return True
-        except (ValueError, IndexError):
+                try:
+                    if isinstance(value, str):
+                        try:
+                            current[last] = json.loads(value)
+                        except json.JSONDecodeError:
+                            current[last] = value
+                    else:
+                        current[last] = value
+                    return True
+                except Exception:
+                    return False
+        except Exception:
             return False
+        return False
 
     @staticmethod
-    def delete_value(obj: Any, path: str) -> bool:
-        """Delete value at path from object."""
-        if not path or path == '$':
-            return False
-            
-        components = JSONPath.parse_path(path)
-        if not components:
-            return False
-            
-        current = obj
-        for component in components[:-1]:
-            try:
-                if isinstance(current, dict):
-                    current = current[component]
-                elif isinstance(current, list):
-                    idx = int(component)
-                    current = current[idx]
-                else:
-                    return False
-            except (KeyError, ValueError, IndexError):
-                return False
+    def _set_recursive(obj: Any, field: str, value: Any) -> bool:
+        """Recursively set value for all matching fields."""
+        changed = False
+        
+        if isinstance(obj, dict):
+            for k, v in list(obj.items()):  # Use list to avoid modification during iteration
+                if k == field:
+                    try:
+                        if isinstance(value, str):
+                            try:
+                                obj[k] = json.loads(value)
+                            except json.JSONDecodeError:
+                                obj[k] = value
+                        else:
+                            obj[k] = value
+                        changed = True
+                    except Exception:
+                        continue
                 
-        # Delete final value
-        try:
-            last = components[-1]
-            if isinstance(current, dict):
-                if last in current:
-                    del current[last]
-                    return True
-            elif isinstance(current, list):
-                idx = int(last)
-                if 0 <= idx < len(current):
-                    del current[idx]
-                    return True
-        except (ValueError, IndexError):
-            pass
-        return False
+                # Recurse into nested objects
+                if isinstance(v, (dict, list)):
+                    if JSONPath._set_recursive(v, field, value):
+                        changed = True
+                        
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    if JSONPath._set_recursive(item, field, value):
+                        changed = True
+                        
+        return changed
 
 class JSONDataType:
     def __init__(self, database):
         self.db = database
 
-    def _ensure_json(self, key: str) -> Any:
+    def _ensure_json(self, key: str) -> Optional[dict]:
         """Ensure value at key is a JSON object."""
         if not self.db.exists(key):
             return None
-        value = self.db.get(key)
-        return value
+        value = self.db.store.get(key)
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return None
+        return value if isinstance(value, (dict, list)) else None
 
-    def json_set(self, key: str, path: str, value: str, nx: bool = False, xx: bool = False) -> bool:
+    def json_set(self, key: str, path: str, value: str) -> str:
         """Set JSON value at path."""
         try:
-            json_value = json.loads(value)
-            current = self._ensure_json(key)
-            
+            json_value = value
+            try:
+                json_value = json.loads(value)
+            except json.JSONDecodeError:
+                if path != '$':  # Allow string values for non-root paths
+                    json_value = value
+
+            # Handle root path
             if path == '$':
-                if current is not None:
-                    if nx:  # Don't update existing key
-                        return False
-                elif xx:  # Only update existing key
-                    return False
                 self.db.store[key] = json_value
                 if not self.db.replaying:
                     self.db.persistence_manager.log_command(f"JSON.SET {key} {path} {value}")
-                return True
-                
+                return "OK"
+
+            # Get existing object or create new
+            current = self._ensure_json(key)
             if current is None:
-                if xx:  # Only update existing key
-                    return False
-                current = {} if not path.split('.')[-1].isdigit() else []
+                if '..' in path:  # Can't set recursive path on non-existent object
+                    return "ERROR"
+                current = {}
                 self.db.store[key] = current
-                
+
+            # Set value at path
             if JSONPath.set_value(current, path, json_value):
                 if not self.db.replaying:
                     self.db.persistence_manager.log_command(f"JSON.SET {key} {path} {value}")
-                return True
-            return False
-        except json.JSONDecodeError:
-            return False
+                return "OK"
+            return "ERROR"
+        except Exception as e:
+            return f"ERROR: {str(e)}"
 
     def json_get(self, key: str, path: str = '$') -> Optional[str]:
         """Get JSON value at path."""
@@ -199,16 +151,19 @@ class JSONDataType:
             if obj is None:
                 return None
                 
-            value = JSONPath.get_value(obj, path)
-            if value is None:
-                return None
+            if path == '$':
+                return json.dumps(obj)
                 
-            # Wrap non-objects in an array for leaf nodes
-            if path != '$' and not isinstance(value, (dict, list)):
-                value = [value]
-                
-            return json.dumps(value)
-        except (TypeError, ValueError):
+            components = JSONPath.parse_path(path)
+            value = obj
+            for comp in components:
+                if isinstance(value, dict):
+                    value = value.get(comp)
+                else:
+                    return None
+                    
+            return json.dumps(value) if value is not None else None
+        except Exception:
             return None
 
     def json_del(self, key: str, path: str = '$') -> bool:
