@@ -44,6 +44,17 @@ git clone https://github.com/shWnrict/redis-like_in-memory_data_store.git
 cd redis-like_in-memory_data_store
 ```
 
+2. Create a virtual environment (optional but recommended):
+```bash
+python -m venv venv
+source venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
 ## Usage
 
 ### Quick Start
@@ -79,7 +90,6 @@ redis-cli
 | MULTI | Start transaction | MULTI |
 | EXEC | Execute transaction | EXEC |
 | DISCARD | Discard transaction | DISCARD |
-
 
 #### Publish/Subscribe:
 
@@ -252,6 +262,7 @@ redis-cli
 ├── appendonly.aof                   # Data persistence AOF
 ├── snapshot.rdb                     # Data persistence RDB
 ├── README.md                        # README file
+├── requirements.txt                 # To import dependencies
 ```
 
 ## Known Limitations
