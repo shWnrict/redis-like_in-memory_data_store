@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional, List, Union
+from typing import Any, Optional, List
 
 class JSONPath:
     @staticmethod

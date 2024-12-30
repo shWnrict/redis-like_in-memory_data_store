@@ -54,6 +54,15 @@ class AOFHandler:
             self.aof_file.close()
 
 class SnapshotManager:
+    """
+    SnapshotManager is responsible for managing the creation and restoration of snapshots for an in-memory database.
+    It periodically saves the current state of the database to a file and can restore the database state from a snapshot file.
+    
+    Attributes:
+        snapshot_path (str): The file path where snapshots are saved.
+        snapshot_interval (int): The interval (in seconds) at which snapshots are created.
+        last_snapshot (float): The timestamp of the last snapshot.
+    """
     def __init__(self, database, snapshot_path="snapshot.rdb", snapshot_interval=3600):
         self.database = database
         self.snapshot_path = snapshot_path

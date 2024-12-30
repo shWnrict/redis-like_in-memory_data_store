@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 class Geohash:
     BITS_PER_CHAR = 5

@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 
 class BitFieldDataType:
     def __init__(self, database):

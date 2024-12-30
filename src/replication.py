@@ -5,6 +5,34 @@ import pickle
 from protocol import format_resp, parse_resp
 
 class ReplicationManager:
+    """
+    Manages replication between a master and slave server in a Redis-like in-memory data store.
+    Attributes:
+        server (object): The server instance.
+        is_slave (bool): Indicates if the server is a slave.
+        master_host (str): The hostname of the master server.
+        master_port (int): The port of the master server.
+        master_socket (socket): The socket connection to the master server.
+        replication_thread (threading.Thread): The thread handling replication.
+        running (bool): Indicates if the replication is running.
+    Methods:
+        set_as_slave(master_host, master_port):
+            Configures the server as a slave to the specified master server.
+        _maintain_replication():
+            Maintains the connection with the master server and handles replication.
+        _connect_to_master():
+            Establishes a connection to the master server.
+        _send_command(*args):
+            Sends a command to the master server.
+        _read_response():
+            Reads and parses the response from the master server.
+        _handle_full_sync():
+            Handles a full data synchronization from the master server.
+        _replicate_command(command):
+            Executes a replicated command locally.
+        stop():
+            Stops the replication process.
+    """
     def __init__(self, server):
         self.server = server
         self.is_slave = False

@@ -2,6 +2,14 @@ from collections import defaultdict
 from threading import Lock
 
 class PubSubManager:
+    """
+    PubSubManager is a class that manages a publish-subscribe messaging system.
+    
+    Attributes:
+        channels (defaultdict): A dictionary where keys are channel names and values are sets of client IDs subscribed to those channels.
+        client_subscriptions (defaultdict): A dictionary where keys are client IDs and values are sets of channels to which the clients are subscribed.
+        lock (Lock): A threading lock to ensure thread-safe operations on the data structures.
+    """
     def __init__(self):
         self.channels = defaultdict(set)
         self.client_subscriptions = defaultdict(set)

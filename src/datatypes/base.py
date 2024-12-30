@@ -1,4 +1,4 @@
-# Base class for all data types
+# Base class for all data types that repesents simple in-memory key-value store.
 # datatypes/base.py
 
 class BaseDataType:

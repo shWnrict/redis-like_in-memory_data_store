@@ -1,7 +1,6 @@
 import math
 import mmh3  # MurmurHash3 for better hash distribution
-from typing import List, Set, Optional
-import struct
+from typing import List
 
 class HyperLogLog:
     def __init__(self, precision: int = 14):

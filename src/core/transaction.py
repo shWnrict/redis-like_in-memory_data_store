@@ -1,6 +1,12 @@
 # core/transaction.py
 
 class TransactionManager:
+    """
+    TransactionManager is a class that manages transactions for a database. It allows clients to start, queue commands, 
+    execute, and discard transactions. Transactions ensure that a series of commands are executed atomically, meaning 
+    either all commands are executed successfully, or none are executed at all.
+  
+    """
     def __init__(self, database):
         self.database = database
         self.transactions = {}  # {client_id: [commands]}

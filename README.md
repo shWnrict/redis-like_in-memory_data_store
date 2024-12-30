@@ -37,7 +37,8 @@ A custom implementation of a redis-like in-memory data store using Python. This 
 ## Setup Instructions
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.8 or higher - https://www.python.org/downloads/
+- Redis-cli: https://github.com/microsoftarchive/redis/releases (for Windows)
 
 ### Installation
 1. Clone the repository:
@@ -46,7 +47,7 @@ git clone https://github.com/shWnrict/redis-like_in-memory_data_store.git
 cd redis-like_in-memory_data_store
 ```
 
-2. Create a virtual environment (optional but recommended):
+2. Create a virtual environment (optional):
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -69,7 +70,7 @@ Currently, the project can be tested using redis-cli:
 ### Quick Start
 1. Start the Server
 ```bash
-python src/server.py
+python -m src.main
 ```
 2. In another terminal, use redis-cli to connect
 ```bash
@@ -237,8 +238,10 @@ project_root/
 ```
 
 ## Known Limitations
+- Tested with redis-cli only
 - Limited command set implementation
-- No authentication/authorization
+- No authentication or authorization
+- No support for multiple databases
 - No cluster support
 - No Lua scripting support
 
@@ -255,12 +258,12 @@ project_root/
 - [ ] Redis Patterns Implementation
 
 ## Notes
-- This is a learning project
-- Not recommended for production use without thorough testing and security review
-- Implementation focuses on understanding core concepts rather than performance optimization (Only a limited set of commands are implemented. And there is no support for multiple databases or authentication.)
+- This is a learning project> Implementation focuses on understanding core concepts rather than performance optimization
+- Not recommended for production use without thorough testing and security review 
 
 ## Acknowledgments
 - Inspired by Redis architecture and commands
 - Project structure based on provided requirements document
 - Resources: 
-  - https://redis.io/docs/latest/
+  - Official Redis Documentation - https://redis.io/docs/latest/
+  - Install Redis for Windows - https://www.youtube.com/watch?v=188Fy-oCw4w

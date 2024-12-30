@@ -19,24 +19,40 @@ import threading
 import time
 
 class KeyValueStore:
+    """
+    KeyValueStore is an in-memory key-value database that supports various data types and operations, similar to Redis. 
+    It includes features such as persistence, transactions, and expiry management. 
+    
+    Methods:
+        set_command_map(command_map): Sets the command map for transaction handling.
+        set(key, value): Sets a key-value pair and logs the operation.
+        get(key): Retrieves a key's value, considering expiry.
+        delete(key): Deletes a key and logs the operation.
+        exists(key): Checks if a key exists, considering expiry.
+        flush(): Clears all keys from the database.
+        stop(): Stops the managers and persistence.
+        get_snapshot(): Gets the current database state for replication.
+        restore_from_master(data): Restores the database state from a master.
+    """
     def __init__(self):
         self.store = {}
         self.expiry = {}
         self.expiry_manager = ExpiryManager(self)
         self.transaction_manager = TransactionManager(self)
         self.persistence_manager = PersistenceManager(self)
-        self.string = StringDataType(self)  # Initialize string operations
-        self.list = ListDataType(self)  # Initialize list operations
-        self.sets = SetDataType(self)  # Rename from 'set' to 'sets' to avoid conflict
-        self.hash = HashDataType(self)  # Initialize hash operations
-        self.zset = ZSetDataType(self)  # Initialize sorted set operations
-        self.stream = StreamDataType(self)  # Initialize stream operations
-        self.geo = GeoDataType(self)  # Initialize geo operations
-        self.bitmap = BitMapDataType(self)  # Initialize bitmap operations
-        self.bitfield = BitFieldDataType(self)  # Initialize bitfield operations
-        self.probabilistic = ProbabilisticDataType(self)  # Initialize probabilistic operations
-        self.timeseries = TimeSeriesDataType(self)  # Initialize time series operations
-        self.json = JSONDataType(self)  # Initialize JSON operations
+        #initialize operations
+        self.string = StringDataType(self) 
+        self.list = ListDataType(self)  
+        self.sets = SetDataType(self) 
+        self.hash = HashDataType(self)  
+        self.zset = ZSetDataType(self) 
+        self.stream = StreamDataType(self) 
+        self.geo = GeoDataType(self)  
+        self.bitmap = BitMapDataType(self)  
+        self.bitfield = BitFieldDataType(self) 
+        self.probabilistic = ProbabilisticDataType(self) 
+        self.timeseries = TimeSeriesDataType(self) 
+        self.json = JSONDataType(self)
         self.command_map = None  # Will be set by server
 
         # Disable logging during replay

@@ -1,5 +1,3 @@
-# src/server.py
-
 import socket
 import select
 import pickle
@@ -24,6 +22,25 @@ from commands.timeseries_handler import TimeSeriesCommandHandler
 from commands.json_handler import JSONCommandHandler
 
 class TCPServer:
+    """
+    TCPServer is a class that implements a Redis-like in-memory data store server.
+    
+    Attributes:
+        host (str): The host address of the server.
+        port (int): The port number of the server.
+        db (KeyValueStore): The key-value store database instance.
+        server_socket (socket.socket): The server socket.
+        shutting_down (bool): Flag indicating if the server is shutting down.
+        socket_timeout (float): The timeout value for socket operations.
+        active_clients (set): A set of active client sockets.
+        pubsub_manager (PubSubManager): The Pub/Sub manager instance.
+        subscribed_clients (set): A set of subscribed client IDs.
+        client_sockets (dict): A dictionary mapping client IDs to their sockets.
+        client_channels (defaultdict): A dictionary mapping client IDs to their subscribed channels.
+        replication_manager (ReplicationManager): The replication manager instance.
+        slaves (set): A set of slave client IDs.
+        command_map (dict): A dictionary mapping commands to their handlers.
+    """
     def __init__(self, host='127.0.0.1', port=6379):
         self.host = host
         self.port = port

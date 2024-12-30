@@ -1,9 +1,17 @@
 # core/expiry.py
 
 import time
-import threading
 
 class ExpiryManager:
+    """
+    ExpiryManager is a class responsible for managing the expiration of keys in an in-memory database.
+    It provides methods to set expiration times, check the time-to-live (TTL) of keys, remove expiration times, 
+    and clean up expired keys in the background.
+
+    Attributes:
+        database (Database): The in-memory database instance.
+        running (bool): A flag to control the background cleaner task.
+    """
     def __init__(self, database):
         self.database = database
         self.running = True
