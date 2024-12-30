@@ -74,8 +74,28 @@ class ListDataType:
         """Get a range of elements from the list."""
         try:
             current = self._ensure_list(key)
-            start = max(0, start if start >= 0 else len(current) + start)
-            stop = min(len(current), stop if stop >= 0 else len(current) + stop + 1)
+            
+            # Convert to integer
+            start = int(start)
+            stop = int(stop)
+            
+            # Handle negative indices
+            if start < 0:
+                start = len(current) + start
+            if stop < 0:
+                stop = len(current) + stop
+            
+            # Redis includes the stop index in the range
+            stop += 1
+            
+            # Ensure bounds
+            start = max(0, start)
+            stop = min(len(current), stop)
+            
+            # Return empty list if invalid range
+            if start > stop or start >= len(current):
+                return []
+                
             return current[start:stop]
         except ValueError:
             return []
