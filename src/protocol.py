@@ -73,6 +73,16 @@ def format_resp(data):
             else:
                 parts.append(format_resp(item))
         return "".join(parts)
+    elif isinstance(data, tuple) and len(data) == 3 and data[0] == "SUBSCRIBE_MODE":
+        _, channel, count = data
+        return (
+            "*3\r\n"
+            "$9\r\n"
+            "subscribe\r\n"
+            f"${len(channel)}\r\n"
+            f"{channel}\r\n"
+            f":{count}\r\n"
+        )
     else:
         data_str = str(data)
         return f"${len(data_str)}\r\n{data_str}\r\n"

@@ -160,13 +160,11 @@ class TCPServer:
             response = self.process_request(request, client_id)
             
             # Handle subscription mode
-            if isinstance(response, tuple):
-                msg_type, channel = response
-                if msg_type == "SUBSCRIBE_MODE":
-                    self.subscribed_clients.add(client_id)
-                    self.client_channels[client_id].add(channel)
-                    client_socket.sendall(format_pubsub_message("subscribe", channel).encode())
-                    return
+            if isinstance(response, list):
+                for msg_type, channel, count in response:
+                    if msg_type == "SUBSCRIBE_MODE":
+                        client_socket.sendall(format_pubsub_message("subscribe", channel, count).encode())
+                return
             
             # Format and send response
             formatted_response = format_resp(response)
@@ -224,11 +222,16 @@ class TCPServer:
 
         # Handle pub/sub commands first
         if command == "SUBSCRIBE":
-            if len(args) != 1:
-                return "ERROR: SUBSCRIBE requires channel name"
-            channel = args[0]
-            self.pubsub_manager.subscribe(client_id, channel)
-            return ("SUBSCRIBE_MODE", channel)
+            if not args:
+                return "ERROR: SUBSCRIBE requires at least one channel name"
+            
+            results = []
+            for channel in args:
+                count = self.pubsub_manager.subscribe(client_id, channel)
+                self.subscribed_clients.add(client_id)
+                self.client_channels[client_id].add(channel)
+                results.append(("SUBSCRIBE_MODE", channel, count))
+            return results
 
         if command == "PUBLISH":
             if len(args) != 2:
