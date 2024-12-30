@@ -46,21 +46,56 @@ class StringDataType:
 
     def getrange(self, key, start, end):
         """Get a substring of the string stored at key."""
-        value = self.database.get(key)
-        if value is None or not isinstance(value, str):
-            return "ERROR: Value at key is not a string"
-        return value[int(start):int(end) + 1]
+        try:
+            value = self.database.get(key)
+            if value is None:
+                return ""
+            if not isinstance(value, str):
+                return "ERROR: Value at key is not a string"  # Changed to match test expectation
+            
+            start = int(start)
+            end = int(end)
+            
+            # Handle negative indices
+            if start < 0:
+                start = len(value) + start
+            if end < 0:
+                end = len(value) + end
+            
+            # Adjust end to be inclusive (Redis behavior)
+            end += 1
+            
+            # Ensure we don't go out of bounds
+            start = max(0, start)
+            end = min(len(value), end)
+            
+            return value[start:end]
+        except ValueError:
+            return ""
 
     def setrange(self, key, offset, value):
         """Overwrite part of the string stored at key."""
-        existing_value = self.database.get(key) or ""
-        if not isinstance(existing_value, str):
-            return "ERROR: Value at key is not a string"
-        offset = int(offset)
-        if offset < 0:
-            return "ERROR: Offset cannot be negative"
-        new_value = (existing_value[:offset] +
-                     value +
-                     existing_value[offset + len(value):])
-        self.database.set(key, new_value)
-        return len(new_value)
+        try:
+            offset = int(offset)
+            if offset < 0:
+                return "ERROR: Offset cannot be negative"
+            
+            current = self.database.get(key)
+            if current is None:
+                current = "\0" * offset  # Initialize with null bytes if key doesn't exist
+            elif not isinstance(current, str):
+                return "ERROR: Value at key is not a string"
+            
+            # Extend string with null bytes if needed
+            if offset > len(current):
+                current = current + "\0" * (offset - len(current))
+            
+            # Construct new value
+            new_value = current[:offset] + str(value)
+            if offset + len(str(value)) < len(current):
+                new_value += current[offset + len(str(value)):]
+                
+            self.database.set(key, new_value)
+            return len(new_value)
+        except ValueError:
+            return "ERROR: Invalid offset value"
