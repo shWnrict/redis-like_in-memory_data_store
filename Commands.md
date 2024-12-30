@@ -171,14 +171,6 @@ ZRANGEBYSCORE myzset 1 2
 ```
 
 #### JSON document storage
-
-| Command | Sample Input | Expected Output |
-|---------|--------------|-----------------|
-| JSON.SET | JSON.SET myjson . '{"name": "Redis", "type": "Database"}' | OK |
-| JSON.GET | JSON.GET myjson . | {"name": "Redis", "type": "Database"} |
-| JSON.DEL | JSON.DEL myjson .name | (integer) 1 |
-| JSON.ARRAPPEND | JSON.ARRAPPEND myjson .tags "fast" "scalable" | (integer) 3 |
-
 **Examples**
 Replace an existing value
 ```shell
@@ -214,6 +206,7 @@ JSON.SET item:1 $ '{"name":"Noise-cancelling Bluetooth headphones","description"
 JSON.ARRAPPEND item:1 $.colors '"blue"'
 JSON.GET item:1
 ```
+
 #### Stream Operations: Append-only log structures
 
 | Command | Sample Input | Expected Output |
