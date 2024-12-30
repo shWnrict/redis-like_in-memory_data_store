@@ -6,6 +6,7 @@ class SkipListNode:
         self.score = score
         self.member = member
         self.forward = [None] * (level + 1)
+        self.span = [0] * (level + 1)  # Add span for rank calculations
 
 class SkipList:
     MAX_LEVEL = 16
@@ -24,32 +25,51 @@ class SkipList:
 
     def insert(self, score: float, member: str) -> None:
         update = [None] * (self.MAX_LEVEL + 1)
+        rank = [0] * (self.MAX_LEVEL + 1)
         current = self.head
 
+        # Find position and calculate rank
         for i in range(self.level, -1, -1):
+            rank[i] = rank[i + 1] if i < self.level else 0
             while (current.forward[i] and 
                   (current.forward[i].score < score or 
                    (current.forward[i].score == score and 
                     current.forward[i].member < member))):
+                rank[i] += current.span[i]
                 current = current.forward[i]
             update[i] = current
 
         level = self.random_level()
         if level > self.level:
             for i in range(self.level + 1, level + 1):
+                rank[i] = 0
                 update[i] = self.head
+                update[i].span[i] = self.length
             self.level = level
 
+        # Create new node
         new_node = SkipListNode(score, member, level)
+        
+        # Insert node and update spans
         for i in range(level + 1):
             new_node.forward[i] = update[i].forward[i]
             update[i].forward[i] = new_node
+            
+            # Update spans
+            new_node.span[i] = update[i].span[i] - (rank[0] - rank[i])
+            update[i].span[i] = (rank[0] - rank[i]) + 1
+
+        # Update spans for untouched levels
+        for i in range(level + 1, self.level + 1):
+            update[i].span[i] += 1
+
         self.length += 1
 
     def delete(self, score: float, member: str) -> bool:
         update = [None] * (self.MAX_LEVEL + 1)
         current = self.head
 
+        # Find node to delete
         for i in range(self.level, -1, -1):
             while (current.forward[i] and 
                   (current.forward[i].score < score or 
@@ -60,13 +80,16 @@ class SkipList:
 
         current = current.forward[0]
         if current and current.score == score and current.member == member:
+            # Remove node at all levels
             for i in range(self.level + 1):
                 if update[i].forward[i] != current:
                     break
                 update[i].forward[i] = current.forward[i]
 
+            # Update level if needed
             while self.level > 0 and not self.head.forward[self.level]:
                 self.level -= 1
+
             self.length -= 1
             return True
         return False
@@ -75,15 +98,18 @@ class SkipList:
         rank = 0
         current = self.head
 
+        # Traverse all levels from top to bottom
         for i in range(self.level, -1, -1):
             while (current.forward[i] and 
                   (current.forward[i].score < score or 
                    (current.forward[i].score == score and 
                     current.forward[i].member <= member))):
-                if current.forward[i].score == score and current.forward[i].member == member:
-                    return rank
-                rank += 1
+                rank += current.span[i]
                 current = current.forward[i]
+                if (current.score == score and 
+                    current.member == member):
+                    return rank - 1  # Adjust for 0-based ranking
+
         return None
 
     def get_range(self, start: int, stop: int) -> List[Tuple[str, float]]:
@@ -92,17 +118,26 @@ class SkipList:
         if stop < 0:
             stop = self.length + stop
         
-        result = []
+        stop = min(stop, self.length - 1)
+        
         if start > stop or start >= self.length:
-            return result
+            return []
 
+        result = []
+        rank = 0
         current = self.head
-        traversed = -1
-        while current.forward[0] and traversed < stop:
+
+        # Skip to start position using spans
+        for i in range(self.level, -1, -1):
+            while current.forward[i] and (rank + current.span[i]) <= start:
+                rank += current.span[i]
+                current = current.forward[i]
+
+        current = current.forward[0]
+        while current and len(result) <= (stop - start):
+            result.append((current.member, current.score))
             current = current.forward[0]
-            traversed += 1
-            if traversed >= start:
-                result.append((current.member, current.score))
+
         return result
 
 class ZSetDataType:
@@ -134,7 +169,7 @@ class ZSetDataType:
         try:
             zset = self._ensure_zset(key)
             added = 0
-            pairs = list(zip(args[::2], args[1::2]))  # Convert to score-member pairs
+            pairs = list(zip(args[::2], args[1::2]))
             
             for score_str, member in pairs:
                 try:
@@ -144,11 +179,11 @@ class ZSetDataType:
                 
                 if member not in zset['dict']:
                     added += 1
-                elif zset['dict'][member] == score:
-                    continue
                 
+                # Always update the skiplist
+                if member in zset['dict']:
+                    zset['skiplist'].delete(zset['dict'][member], member)
                 zset['dict'][member] = score
-                zset['skiplist'].delete(zset['dict'].get(member, 0), member)
                 zset['skiplist'].insert(score, member)
             
             if added and not self.db.replaying:
