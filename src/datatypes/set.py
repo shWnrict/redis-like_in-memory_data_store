@@ -9,34 +9,35 @@ class SetDataType:
 
     def _ensure_set(self, key):
         """Ensure the value at key is a set."""
-        if not self.db.exists(key):
-            self.db.store[key] = set()  # Direct store access to avoid conversion
-            return self.db.store[key]
-        value = self.db.get(key)
+        value = self.db.store.get(key)
+        if value is None:
+            value = set()
+            self.db.store[key] = value
+            return value
         if not isinstance(value, set):
-            raise ValueError("Value is not a set")
+            raise ValueError("WRONGTYPE Operation against a key holding the wrong kind of value")
         return value
 
     def sadd(self, key, *members):
-        """Add members to set stored at key."""
+        """Add one or more members to a set."""
         try:
             current = self._ensure_set(key)
             count = 0
             for member in members:
-                str_member = str(member)
-                if str_member not in current:
-                    current.add(str_member)
+                if member not in current:  # Use direct comparison
+                    current.add(member)
                     count += 1
             if count > 0:
-                self.db.store[key] = current
                 if not self.db.replaying:
-                    self.db.persistence_manager.log_command(f"SADD {key} {' '.join(members)}")
+                    self.db.persistence_manager.log_command(f"SADD {key} {' '.join(str(m) for m in members)}")
             return count
-        except ValueError:
-            return 0
+        except ValueError as e:
+            return str(e)
 
     def srem(self, key, *members):
-        """Remove members from set stored at key."""
+        """Remove one or more members from a set."""
+        if not self.db.exists(key):
+            return 0
         try:
             current = self._ensure_set(key)
             count = 0
@@ -45,15 +46,18 @@ class SetDataType:
                     current.remove(member)
                     count += 1
             if count > 0:
-                self.db.store[key] = current
+                if len(current) == 0:
+                    self.db.delete(key)
                 if not self.db.replaying:
-                    self.db.persistence_manager.log_command(f"SREM {key} {' '.join(members)}")
+                    self.db.persistence_manager.log_command(f"SREM {key} {' '.join(str(m) for m in members)}")
             return count
-        except ValueError:
-            return 0
+        except ValueError as e:
+            return str(e)
 
     def sismember(self, key, member):
-        """Return if member is a member of set stored at key."""
+        """Return if member is a member of the set."""
+        if not self.db.exists(key):
+            return False
         try:
             current = self._ensure_set(key)
             return member in current
@@ -61,38 +65,53 @@ class SetDataType:
             return False
 
     def smembers(self, key):
-        """Return all members of set stored at key."""
+        """Return all members of the set."""
         try:
-            return sorted(self._ensure_set(key))
-        except ValueError:
-            return []
+            if not self.db.exists(key):
+                return set()
+            return self._ensure_set(key)
+        except ValueError as e:
+            return str(e)
 
     def sinter(self, *keys):
-        """Return intersection of all sets specified by keys."""
-        try:
-            sets = [self._ensure_set(key) for key in keys]
-            if not sets:
-                return []
-            return sorted(sets[0].intersection(*sets[1:]))
-        except ValueError:
-            return []
-
-    def sunion(self, *keys):
-        """Return union of all sets specified by keys."""
-        try:
-            sets = [self._ensure_set(key) for key in keys]
-            if not sets:
-                return []
-            return sorted(sets[0].union(*sets[1:]))
-        except ValueError:
-            return []
-
-    def sdiff(self, *keys):
-        """Return difference between first set and all successive sets."""
+        """Return the intersection of multiple sets."""
         try:
             if not keys:
-                return []
-            sets = [self._ensure_set(key) for key in keys]
-            return sorted(sets[0].difference(*sets[1:]))
-        except ValueError:
-            return []
+                return set()
+            sets = []
+            for key in keys:
+                if not self.db.exists(key):
+                    return set()
+                sets.append(self._ensure_set(key))
+            return sets[0].intersection(*sets[1:]) if sets else set()
+        except ValueError as e:
+            return str(e)
+
+    def sunion(self, *keys):
+        """Return the union of multiple sets."""
+        try:
+            if not keys:
+                return set()
+            sets = []
+            for key in keys:
+                if self.db.exists(key):
+                    sets.append(self._ensure_set(key))
+            return sets[0].union(*sets[1:]) if sets else set()
+        except ValueError as e:
+            return str(e)
+
+    def sdiff(self, *keys):
+        """Return the difference of multiple sets."""
+        try:
+            if not keys:
+                return set()
+            if not self.db.exists(keys[0]):
+                return set()
+            first_set = self._ensure_set(keys[0])
+            other_sets = []
+            for key in keys[1:]:
+                if self.db.exists(key):
+                    other_sets.append(self._ensure_set(key))
+            return first_set.difference(*other_sets) if other_sets else first_set
+        except ValueError as e:
+            return str(e)
