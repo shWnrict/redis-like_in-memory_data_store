@@ -179,7 +179,7 @@ ZRANGEBYSCORE myzset 1 2
 | JSON.DEL | JSON.DEL myjson .name | (integer) 1 |
 | JSON.ARRAPPEND | JSON.ARRAPPEND myjson .tags "fast" "scalable" | (integer) 3 |
 
-Examples
+**Examples**
 Replace an existing value
 ```shell
 JSON.SET doc $ '{"a":2}'
@@ -199,9 +199,21 @@ Update multi-paths
 JSON.SET doc $ '{"f1": {"a":1}, "f2":{"a":2}}'
 JSON.SET doc $..a 3
 JSON.GET doc
-"{\"f1\":{\"a\":3},\"f2\":{\"a\":3}}"
 ```
 
+Delete specified values
+```shell
+redis> JSON.SET doc $ '{"a": 1, "nested": {"a": 2, "b": 3}}'
+redis> JSON.DEL doc $..a
+redis> JSON.GET doc $
+```
+
+Use case: Add a new color to a list of product colors
+```shell
+JSON.SET item:1 $ '{"name":"Noise-cancelling Bluetooth headphones","description":"Wireless Bluetooth headphones with noise-cancelling technology","connection":{"wireless":true,"type":"Bluetooth"},"price":99.98,"stock":25,"colors":["black","silver"]}'
+JSON.ARRAPPEND item:1 $.colors '"blue"'
+JSON.GET item:1
+```
 #### Stream Operations: Append-only log structures
 
 | Command | Sample Input | Expected Output |

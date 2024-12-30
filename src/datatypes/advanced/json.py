@@ -94,6 +94,104 @@ class JSONPath:
                         
         return changed
 
+    @staticmethod
+    def get_value(obj: Any, path: str) -> Any:
+        """Get value at path from object."""
+        if not path or path == '$':
+            return obj
+            
+        try:
+            if '..' in path:
+                return JSONPath._get_recursive(obj, path[3:])  # Skip $.., keep rest of path
+                
+            current = obj
+            components = path.split('.')[1:]  # Skip $ prefix
+            
+            for component in components:
+                if isinstance(current, dict):
+                    current = current.get(component)
+                    if current is None:
+                        return None
+                else:
+                    return None
+            return current
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_recursive(obj: Any, field: str) -> List[Any]:
+        """Recursively get all values matching the field."""
+        results = []
+        
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == field:
+                    results.append(v)
+                if isinstance(v, (dict, list)):
+                    results.extend(JSONPath._get_recursive(v, field))
+                    
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    results.extend(JSONPath._get_recursive(item, field))
+                    
+        return results
+
+    @staticmethod
+    def delete_value(obj: Any, path: str) -> bool:
+        """Delete value at path from object."""
+        if not path or path == '$':
+            return False
+            
+        try:
+            if '..' in path:
+                return JSONPath._delete_recursive(obj, path[3:])  # Skip $.., keep rest of path
+                
+            current = obj
+            components = path.split('.')[1:]  # Skip $ prefix
+            
+            # Navigate to parent of target
+            for component in components[:-1]:
+                if isinstance(current, dict):
+                    current = current.get(component)
+                    if current is None:
+                        return False
+                else:
+                    return False
+                    
+            # Delete the target
+            last = components[-1]
+            if isinstance(current, dict) and last in current:
+                del current[last]
+                return True
+            return False
+        except Exception:
+            return False
+
+    @staticmethod
+    def _delete_recursive(obj: Any, field: str) -> bool:
+        """Recursively delete all values matching the field."""
+        changed = False
+        
+        if isinstance(obj, dict):
+            if field in obj:
+                del obj[field]
+                changed = True
+            
+            # Recurse into remaining values
+            for v in list(obj.values()):
+                if isinstance(v, (dict, list)):
+                    if JSONPath._delete_recursive(v, field):
+                        changed = True
+                        
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    if JSONPath._delete_recursive(item, field):
+                        changed = True
+                        
+        return changed
+
 class JSONDataType:
     def __init__(self, database):
         self.db = database
