@@ -30,14 +30,12 @@ A custom implementation of a redis-like in-memory data store using Python. This 
 - Recovery on restart
 
 ##### Snapshots
-- Point-in-time snapshots of the dataset
-- Configurable snapshot intervals
-- Manual snapshot through SAVE command
+- Point-in-time snapshots of the dataset (300 seconds)
 
 ## Setup Instructions
 
 ### Prerequisites
-- Python 3.8 or higher - https://www.python.org/downloads/
+- Python 3:  https://www.python.org/downloads/
 - Redis-cli: https://github.com/microsoftarchive/redis/releases (for Windows)
 
 ### Installation
@@ -48,7 +46,6 @@ cd redis-like_in-memory_data_store
 ```
 
 ## Usage
-Currently, the project can be tested using redis-cli:
 
 ### Quick Start
 1. Start the Server
@@ -57,8 +54,9 @@ python -m src.main
 ```
 2. In another terminal, use redis-cli to connect
 ```bash
-redis-cli -p 6379
+redis-cli
 ```
+
 ### Supported Commands
 
 #### Core Operations: Basic key-value operations
@@ -258,11 +256,15 @@ redis-cli -p 6379
         ├── timeseries_handler.py    # Handler for timeseries commands
         ├── transaction_handler.py   # Handler for transaction commands
         ├── zset_handler.py          # Handler for sorted set commands
+├── appendonly.aof                   # Data persistence AOF
+├── snapshot.rdb                     # Data persistence RDB
+├── README.md                        # README file
 ```
 
 ## Known Limitations
 - Tested with redis-cli only
 - Limited command set implementation
+- AOF has no rewrite operation
 - No authentication or authorization
 - No support for multiple databases
 - No cluster support
@@ -281,7 +283,7 @@ redis-cli -p 6379
 - [ ] Redis Patterns Implementation
 
 ## Notes
-- This is a learning project> Implementation focuses on understanding core concepts rather than performance optimization
+- This is a learning project. Implementation focuses on understanding core concepts rather than performance optimization
 - Not recommended for production use without thorough testing and security review 
 
 ## Acknowledgments
@@ -289,4 +291,4 @@ redis-cli -p 6379
 - Project structure based on provided requirements document
 - Resources: 
   - Official Redis Documentation - https://redis.io/docs/latest/
-  - Install Redis for Windows - https://www.youtube.com/watch?v=188Fy-oCw4w
+  - Guide to install Redis-cli for Windows - https://www.youtube.com/watch?v=188Fy-oCw4w

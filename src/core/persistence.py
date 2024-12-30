@@ -63,7 +63,7 @@ class SnapshotManager:
         snapshot_interval (int): The interval (in seconds) at which snapshots are created.
         last_snapshot (float): The timestamp of the last snapshot.
     """
-    def __init__(self, database, snapshot_path="snapshot.rdb", snapshot_interval=3600):
+    def __init__(self, database, snapshot_path="snapshot.rdb", snapshot_interval=300):
         self.database = database
         self.snapshot_path = snapshot_path
         self.snapshot_interval = snapshot_interval
