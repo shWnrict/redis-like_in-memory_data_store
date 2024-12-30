@@ -7,6 +7,9 @@ class CoreCommandHandler(BaseCommandHandler):
             "GET": self.get_command,
             "DEL": self.del_command,
             "EXISTS": self.exists_command,
+            "EXPIRE": self.expire_command,    # Add expiry commands
+            "TTL": self.ttl_command,
+            "PERSIST": self.persist_command,
         }
 
     def set_command(self, client_id, key, value):
@@ -22,3 +25,19 @@ class CoreCommandHandler(BaseCommandHandler):
 
     def exists_command(self, client_id, key):
         return "(1)" if self.db.exists(key) else "(0)"
+
+    def expire_command(self, client_id, key, seconds):
+        """Set a timeout on key."""
+        try:
+            seconds = int(seconds)
+            return 1 if self.db.expiry_manager.set_expiry(key, seconds) else 0
+        except ValueError:
+            return "ERR value is not an integer or out of range"
+
+    def ttl_command(self, client_id, key):
+        """Get the time to live for a key in seconds."""
+        return self.db.expiry_manager.ttl(key)
+
+    def persist_command(self, client_id, key):
+        """Remove the expiration from a key."""
+        return 1 if self.db.expiry_manager.persist(key) else 0

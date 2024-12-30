@@ -266,8 +266,9 @@ class TCPServer:
                       'BITFIELD',
                       'PFADD', 'PFMERGE',
                       'BF.RESERVE', 'BF.ADD',
-                      'TS.CREATE', 'TS.ADD',  # Add time series write commands
-                      'JSON.SET', 'JSON.DEL', 'JSON.ARRAPPEND']: # Add JSON write commands
+                      'TS.CREATE', 'TS.ADD', 
+                      'JSON.SET', 'JSON.DEL', 'JSON.ARRAPPEND',
+                      'EXPIRE', 'PERSIST']:
             full_command = [command] + [str(arg) for arg in args]
             self.replicate_to_slaves(' '.join(full_command))
 

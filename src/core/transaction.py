@@ -42,7 +42,11 @@ class TransactionManager:
             for command, args in commands:
                 command_func = self.database.command_map.get(command)
                 if command_func:
-                    result = command_func(client_id, *args)
+                    # Pass client_id and unpack args properly
+                    if isinstance(args, (list, tuple)):
+                        result = command_func(client_id, *args)
+                    else:
+                        result = command_func(client_id, args)
                     results.append(result)
                 else:
                     results.append(f"ERROR: Unknown command {command}")

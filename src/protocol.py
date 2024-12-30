@@ -1,5 +1,14 @@
 class RESPError(Exception):
+    """Base class for RESP protocol errors"""
     pass
+
+class RedisCommandError(RESPError):
+    """Error for invalid command syntax or usage"""
+    prefix = "ERR"
+
+class RedisWrongTypeError(RESPError):
+    """Error for operation against key holding wrong kind of value"""
+    prefix = "WRONGTYPE"
 
 def parse_resp(data):
     """Parse RESP data into Python objects."""
@@ -39,11 +48,19 @@ def parse_resp(data):
 def format_resp(data):
     """Format Python objects into RESP."""
     if data is None:
-        return "+OK\r\n"  # Return OK for successful operations with no return value
+        return "$-1\r\n"  # Redis nil response
     elif isinstance(data, str):
         if data.startswith("ERROR"):
-            return f"-{data[6:]}\r\n"  # Convert ERROR: prefix to error response
-        return f"+{data}\r\n"
+            # Extract error message
+            error_msg = data[6:] if data.startswith("ERROR: ") else data
+            
+            # Handle different error types
+            if "wrong kind of value" in error_msg.lower():
+                return f"-WRONGTYPE {error_msg}\r\n"
+            else:
+                return f"-ERR {error_msg}\r\n"
+                
+        return f"${len(data)}\r\n{data}\r\n"
     elif isinstance(data, int):
         return f":{data}\r\n"
     elif isinstance(data, list):
